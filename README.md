@@ -1,4 +1,4 @@
-# 🐶 わんころBot — 灯麗会公式 Discord Bot
+# 🐶 わんころBot — Discord Bot
 
 **わんころBot** は、Discord サーバーのために設計された  
 管理補助・参加導線・ゲームロール・VALORANT支援などを統合管理するマルチBotです。  
