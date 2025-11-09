@@ -168,7 +168,7 @@ sudo journalctl -u wankorobot -f
 ## 💬 作者・クレジット
 
 **開発者：** あきと（[@akitig](https://akitiger.com)）  
-**サーバー：** 秘密 
+**サーバー：** 秘密   
 **Bot名：** わんころBot 🐶  
 
 > “礼儀と遊び心を両立するサーバーのために。”

@@ -38,7 +38,7 @@ async def pong(interaction: discord.Interaction):
 # ✅ Cogロード
 # ======================================================
 async def load_all_cogs():
-    cogs = ["cogs.welcome", "cogs.reaction_roles", "cogs.valomap"]
+    cogs = ["cogs.welcome", "cogs.reaction_roles", "cogs.valomap", "cogs.leave_log"]
     for cog in cogs:
         try:
             await bot.load_extension(cog)
