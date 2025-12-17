@@ -8,7 +8,13 @@ class ReactionRoles(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.GUILD_ID = int(os.getenv("GUILD_ID"))
-        self.REACTION_ROLE_MESSAGE_ID = int(os.getenv("REACTION_ROLE_MESSAGE_ID", 0))
+
+        # カンマ区切りで複数のメッセージに対応
+        raw_ids = os.getenv("REACTION_ROLE_MESSAGE_IDS", "")
+        self.REACTION_ROLE_MESSAGE_IDS = {
+            int(x) for x in raw_ids.split(",") if x.strip().isdigit()
+        }
+
         self.reaction_role_map = {}
         self.load_reaction_roles()
 
@@ -27,10 +33,10 @@ class ReactionRoles(commands.Cog):
         print(f"✅ Reaction roles loaded: {len(self.reaction_role_map)} entries")
 
     # ======================================================
-    # ✅ リアクション追加/削除
+    # ✅ ロール操作共通処理
     # ======================================================
     async def handle_reaction(self, payload, add=True):
-        if payload.message_id != self.REACTION_ROLE_MESSAGE_ID:
+        if payload.message_id not in self.REACTION_ROLE_MESSAGE_IDS:
             return
         if payload.user_id == self.bot.user.id:
             return
@@ -68,7 +74,7 @@ class ReactionRoles(commands.Cog):
         await self.handle_reaction(payload, add=False)
 
     # ======================================================
-    # ✅ /rrcreate - ゲーム選択
+    # ✅ ゲームリアクションの作成
     # ======================================================
     @app_commands.command(name="rrcreate", description="よく遊ぶゲームを選ぶリアクションメッセージを作成します")
     async def rrcreate(self, interaction: discord.Interaction):
@@ -81,6 +87,7 @@ class ReactionRoles(commands.Cog):
             description="リアクションを付けると自動でロールが付きます！",
             color=0xFFB6C1
         )
+
         msg = await interaction.channel.send(embed=embed)
         await interaction.response.send_message("✅ ゲーム選択メッセージを作成しました！", ephemeral=True)
 
@@ -101,16 +108,24 @@ class ReactionRoles(commands.Cog):
             else:
                 print(f"⚠️ Emoji :{emoji_name}: not found")
 
-        print(f"\n⚙️ .envに以下を追記:")
-        print(f"REACTION_ROLE_MESSAGE_ID={msg.id}")
+        # ======== .env 出力（改善版） ========
+        print("\n📝 以下を .env に必ず追記してください。")
+        print("（他の ID がある場合はカンマ区切りで追加）\n")
+
+        all_ids = list(self.REACTION_ROLE_MESSAGE_IDS | {msg.id})
+        print("# Reaction Role 対象メッセージID")
+        print(f"REACTION_ROLE_MESSAGE_IDS={','.join(str(x) for x in all_ids)}\n")
+
+        print("# Reaction Role 対応表（emoji_id:role_id）")
         for emoji_name, role_name in reaction_map.items():
             emoji = discord.utils.get(guild.emojis, name=emoji_name)
             role = discord.utils.get(guild.roles, name=role_name)
             if emoji and role:
                 print(f"RR_{role_name.upper()}={emoji.id}:{role.id}")
+        print()
 
     # ======================================================
-    # ✅ /rrcreate_valorank - VALORANTランク選択
+    # ✅ VALORANT ランク版
     # ======================================================
     @app_commands.command(name="rrcreate_valorank", description="VALORANTランク選択用のリアクションメッセージを作成します")
     async def rrcreate_valorank(self, interaction: discord.Interaction):
@@ -120,9 +135,10 @@ class ReactionRoles(commands.Cog):
         guild = interaction.guild
         embed = discord.Embed(
             title="🎯 Valorantの現在のランクを選択してね",
-            description="（ランクが変わった場合、付け直すことができるよ）",
+            description="（ランクが変わった場合、付け直してください）",
             color=0xFF4655
         )
+
         msg = await interaction.channel.send(embed=embed)
         await interaction.response.send_message("✅ ランク選択メッセージを作成しました！", ephemeral=True)
 
@@ -146,16 +162,24 @@ class ReactionRoles(commands.Cog):
             else:
                 print(f"⚠️ Emoji :{emoji_name}: not found")
 
-        print(f"\n⚙️ .envに以下を追記:")
-        print(f"REACTION_ROLE_MESSAGE_ID={msg.id}")
+        # ======== .env 出力（改善版） ========
+        print("\n📝 以下を .env に必ず追記してください。")
+        print("（他の ID がある場合はカンマ区切りで追加）\n")
+
+        all_ids = list(self.REACTION_ROLE_MESSAGE_IDS | {msg.id})
+        print("# Reaction Role 対象メッセージID")
+        print(f"REACTION_ROLE_MESSAGE_IDS={','.join(str(x) for x in all_ids)}\n")
+
+        print("# Reaction Role 対応表（emoji_id:role_id）")
         for emoji_name, role_name in rank_map.items():
             emoji = discord.utils.get(guild.emojis, name=emoji_name)
             role = discord.utils.get(guild.roles, name=role_name)
             if emoji and role:
                 print(f"RR_{role_name.upper()}={emoji.id}:{role.id}")
+        print()
 
     # ======================================================
-    # ✅ /rrreload - 設定再読み込み
+    # ❗ /rrreload 設定再読み込み
     # ======================================================
     @app_commands.command(name="rrreload", description="リアクションロール設定を再読み込みします")
     async def rrreload(self, interaction: discord.Interaction):
@@ -163,25 +187,28 @@ class ReactionRoles(commands.Cog):
         await interaction.response.send_message("🔄 設定を再読み込みしました！", ephemeral=True)
 
     # ======================================================
-    # ✅ /rrstatus - 状態確認
+    # ❗ /rrstatus 状態確認
     # ======================================================
     @app_commands.command(name="rrstatus", description="現在のリアクションロール設定を確認します")
     async def rrstatus(self, interaction: discord.Interaction):
         guild = self.bot.get_guild(self.GUILD_ID)
+
         embed = discord.Embed(
             title="Reaction Role Status",
-            description=f"対象メッセージID: `{self.REACTION_ROLE_MESSAGE_ID}`",
+            description=f"対象メッセージID: `{','.join(str(x) for x in self.REACTION_ROLE_MESSAGE_IDS)}`",
             color=0x00BFFF
         )
+
         lines = []
         for emoji_id, role_id in self.reaction_role_map.items():
             role = guild.get_role(role_id)
             lines.append(f"<:{emoji_id}> → {role.mention if role else '❌ Not Found'}")
+
         embed.add_field(name="カスタム絵文字 → ロール", value="\n".join(lines), inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=False)
 
     # ======================================================
-    # ✅ 起動時同期（強制登録）
+    # 起動時同期
     # ======================================================
     @commands.Cog.listener()
     async def on_ready(self):
@@ -189,8 +216,8 @@ class ReactionRoles(commands.Cog):
         try:
             self.bot.tree.add_command(self.rrcreate, guild=guild)
             self.bot.tree.add_command(self.rrcreate_valorank, guild=guild)
-            self.bot.tree.add_command(self.rrstatus, guild=guild)
             self.bot.tree.add_command(self.rrreload, guild=guild)
+            self.bot.tree.add_command(self.rrstatus, guild=guild)
             await self.bot.tree.sync(guild=guild)
             print("✅ ReactionRole commands synced successfully.")
         except Exception as e:
