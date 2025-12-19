@@ -1,5 +1,6 @@
 import os
 import json
+import random
 from datetime import datetime, timezone
 
 import discord
@@ -53,6 +54,19 @@ def _load_json_file(path: str):
         return None
 
 
+def _load_intro(path: str):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        title = data.get("title")
+        text = data.get("text")
+        if not isinstance(title, str) or not isinstance(text, str):
+            return None
+        return title, text
+    except Exception:
+        return None
+
+
 def _normalize_questions(qs):
     if not isinstance(qs, list) or len(qs) == 0:
         return None
@@ -75,6 +89,7 @@ def _normalize_questions(qs):
                 choices.append((c[0], c[1]))
         if len(choices) < 2:
             continue
+        random.shuffle(choices)
         out.append({"q": q, "choices": choices})
     if len(out) == 0:
         return None
@@ -133,6 +148,11 @@ class QuizView(discord.ui.View):
         for idx, (label, score) in enumerate(choices):
             self.add_item(ChoiceButton(label=label, score=score, row=idx // 2))
 
+    def disable_all(self):
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                item.disabled = True
+
 
 class ChoiceButton(discord.ui.Button):
     def __init__(self, label: str, score: int, row: int = 0):
@@ -142,6 +162,28 @@ class ChoiceButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         view: QuizView = self.view  # type: ignore
+
+        if not isinstance(view, QuizView):
+            return
+
+        s = view.cog.sessions.get(interaction.user.id)
+        if isinstance(s, dict) and s.get("done"):
+            await interaction.response.send_message(
+                "この診断はすでに完了しています。", ephemeral=True
+            )
+            return
+
+        view.disable_all()
+        try:
+            await interaction.response.edit_message(view=view)
+        except discord.InteractionResponded:
+            try:
+                await interaction.edit_original_response(view=view)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
         await view.cog.on_answer(interaction, self.score, self.choice_label)
 
 
@@ -176,15 +218,22 @@ class ValoCheckCog(commands.Cog):
         self.role_gachi_id = _get_int_env("ROLE_GACHI_ID")
 
         self.log_channel_id = _get_opt_channel_id_env("VALO_ROLE_LOG_CHANNEL_ID")
+        self.admin_dm_user_id = _get_opt_channel_id_env("DM_FORWARD_USER_ID")
+
         self.data_path = _get_str_env(
             "VALO_CHECK_DATA_PATH", "data/valo_check_completed.json"
         )
-
         self.questions_path = _get_str_env(
             "VALO_CHECK_QUESTIONS_PATH", "data/valo_questions.json"
         )
-        self.intro_title = _get_str_env("VALO_CHECK_INTRO_TITLE", DEFAULT_INTRO_TITLE)
-        self.intro_text = _get_str_env("VALO_CHECK_INTRO_TEXT", DEFAULT_INTRO_TEXT)
+        self.intro_path = _get_str_env("VALO_CHECK_INTRO_PATH", "data/valo_intro.json")
+
+        intro = _load_intro(self.intro_path)
+        if intro is None:
+            self.intro_title = DEFAULT_INTRO_TITLE
+            self.intro_text = DEFAULT_INTRO_TEXT
+        else:
+            self.intro_title, self.intro_text = intro
 
         self.thresh_enjoy_only = _get_opt_int_env("VALO_CHECK_THRESH_ENJOY_ONLY", 6)
         self.thresh_gachi_only = _get_opt_int_env("VALO_CHECK_THRESH_GACHI_ONLY", 12)
@@ -235,6 +284,7 @@ class ValoCheckCog(commands.Cog):
         e = discord.Embed(
             title=f"VALORANT ロール診断（{idx + 1}/{len(self.questions)}）",
             description=q["q"],
+            color=0xF4A261,
         )
         e.set_footer(text="回答すると次の問題に進みます。")
         return e
@@ -257,10 +307,88 @@ class ValoCheckCog(commands.Cog):
         except Exception:
             return None
 
+    def _build_summary_line(self, answers) -> str:
+        parts = []
+        for i, a in enumerate(answers):
+            pts = 0
+            if isinstance(a, dict):
+                pts = int(a.get("score", 0))
+            parts.append(f"Q{i + 1}={pts}点")
+        return " / ".join(parts)
+
+    def _build_recent_answers(self, answers, n: int = 3) -> str:
+        if not isinstance(answers, list) or len(answers) == 0:
+            return "(no answers)"
+        start = max(0, len(answers) - n)
+        lines = []
+        for i in range(start, len(answers)):
+            a = answers[i]
+            if not isinstance(a, dict):
+                continue
+            pts = int(a.get("score", 0))
+            choice = str(a.get("choice", ""))
+            qn = i + 1
+            lines.append(f"Q{qn}={pts}点: {choice}")
+        if len(lines) == 0:
+            return "(no answers)"
+        return "\n".join(lines)
+
+    async def _notify_admin(
+        self,
+        title: str,
+        detail: str,
+        user: discord.abc.User | None = None,
+        session: dict | None = None,
+        origin: str | None = None,
+    ):
+        if not self.admin_dm_user_id:
+            return
+        target = self.bot.get_user(self.admin_dm_user_id)
+        if target is None:
+            try:
+                target = await self.bot.fetch_user(self.admin_dm_user_id)
+            except Exception:
+                return
+
+        who = ""
+        if user is not None:
+            who = f"\nFrom: **{user}** (`{user.id}`)"
+
+        sess = ""
+        if isinstance(session, dict):
+            idx = int(session.get("idx", -1))
+            score = int(session.get("score", 0))
+            answers = session.get("answers", [])
+            summary = self._build_summary_line(answers)
+            recent = self._build_recent_answers(answers, 3)
+            sess = (
+                f"\nSession: idx={idx} score={score}/{self.max_score}"
+                f"\nSummary: {summary}"
+                f"\nRecent:\n{recent}"
+            )
+
+        src = ""
+        if origin:
+            src = f"\nOrigin: {origin}"
+
+        msg = f"🚨 **{title}**{src}{who}\n{detail}{sess}"
+        try:
+            await target.send(msg)
+        except Exception:
+            return
+
     async def _send_intro(self, user: discord.User):
-        e = discord.Embed(title=self.intro_title, description=self.intro_text)
+        embed = discord.Embed(
+            title=self.intro_title,
+            description=self.intro_text,
+            color=0xF4A261,
+        )
+        if self.bot.user and self.bot.user.avatar:
+            embed.set_thumbnail(url=self.bot.user.avatar.url)
+        embed.set_footer(text="灯麗会 Discord サーバー｜VALORANT ロール診断 🐶")
+
         view = StartView(self, user.id)
-        msg = await user.send(embed=e, view=view)
+        msg = await user.send(embed=embed, view=view)
         self.sessions[user.id]["dm_message"] = msg
 
     async def start_questions(self, user: discord.User):
@@ -277,8 +405,7 @@ class ValoCheckCog(commands.Cog):
         msg: discord.Message = self.sessions[user.id]["dm_message"]
         await msg.edit(embed=embed, view=view)
 
-    async def _cancel_session(self, uid: int, reason: str,
-                              invoker: discord.abc.User):
+    async def _cancel_session(self, uid: int, reason: str, invoker: discord.abc.User):
         s = self.sessions.pop(uid, None)
         if not s:
             return False
@@ -292,6 +419,7 @@ class ValoCheckCog(commands.Cog):
                     "判定・ロール付与は行われません。\n\n"
                     f"理由: {reason}"
                 ),
+                color=0xE76F51,
             )
             try:
                 await msg.edit(embed=e, view=None)
@@ -308,8 +436,8 @@ class ValoCheckCog(commands.Cog):
         except Exception:
             pass
 
-        ch = None
         guild = self.bot.get_guild(self.guild_id)
+        ch = None
         if guild is not None:
             ch = await self._get_log_channel(guild)
         if ch is not None:
@@ -320,6 +448,7 @@ class ValoCheckCog(commands.Cog):
                     f"管理者: **{invoker}**\n"
                     f"理由: **{reason}**"
                 ),
+                color=0xE76F51,
             )
             try:
                 await ch.send(embed=e)
@@ -327,30 +456,53 @@ class ValoCheckCog(commands.Cog):
                 pass
         return True
 
-    async def on_answer(self, interaction: discord.Interaction,
-                        add_score: int, choice_label: str):
+    async def on_answer(
+        self, interaction: discord.Interaction, add_score: int, choice_label: str
+    ):
         uid = interaction.user.id
         s = self.sessions.get(uid)
         if not s:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "セッションが見つかりません。管理者に連絡してね。",
                 ephemeral=True,
             )
+            await self._notify_admin(
+                "VALO診断: セッション不整合",
+                "セッションが見つからずユーザーに案内を表示。",
+                interaction.user,
+                None,
+                "on_answer",
+            )
             return
-        s["score"] += add_score
-        s["answers"].append(choice_label)
+
+        if s.get("done"):
+            return
+
+        current_idx = int(s.get("idx", 0))
+        if current_idx < 0:
+            current_idx = 0
+
+        last_two = {len(self.questions) - 2, len(self.questions) - 1}
+        if current_idx in last_two and int(add_score) == 0:
+            s["force_enjoy"] = True
+
+        s["score"] += int(add_score)
+        s["answers"].append({"choice": choice_label, "score": int(add_score)})
         s["idx"] += 1
-        await interaction.response.defer()
+
         if s["idx"] >= len(self.questions):
+            s["done"] = True
             await self._finalize(interaction.user, s)
             self.sessions.pop(uid, None)
             return
+
         await self._send_question(interaction.user, s["idx"])
 
     async def _finalize(self, user: discord.User, s: dict):
         guild = self.bot.get_guild(self.guild_id)
         if guild is None:
             guild = await self.bot.fetch_guild(self.guild_id)
+
         member = guild.get_member(user.id)
         if member is None:
             member = await guild.fetch_member(user.id)
@@ -359,10 +511,22 @@ class ValoCheckCog(commands.Cog):
         role_gachi = guild.get_role(self.role_gachi_id)
         if role_enjoy is None or role_gachi is None:
             await user.send("ロールID設定が正しくないみたい。運営に連絡してね。")
+            await self._notify_admin(
+                "VALO診断: ロールID不正",
+                f"role_enjoy_id={self.role_enjoy_id}, "
+                f"role_gachi_id={self.role_gachi_id} を取得できませんでした。",
+                user,
+                s,
+                "_finalize",
+            )
             return
 
-        score = int(s["score"])
-        is_gachi, is_enjoy, label = self._calc_roles(score)
+        score = int(s.get("score", 0))
+
+        if s.get("force_enjoy"):
+            is_gachi, is_enjoy, label = False, True, self.label_enjoy
+        else:
+            is_gachi, is_enjoy, label = self._calc_roles(score)
 
         remove_roles = []
         if role_enjoy in member.roles:
@@ -385,16 +549,39 @@ class ValoCheckCog(commands.Cog):
             await user.send(
                 "ロール付与に失敗しました（権限不足）。Botの権限/ロール位置を確認してね。"
             )
+            await self._notify_admin(
+                "VALO診断: ロール付与 Forbidden",
+                f"Guild={guild.name}({guild.id})\nTarget={member}({member.id})",
+                user,
+                s,
+                "_finalize:add_roles",
+            )
+            return
+        except Exception as ex:
+            await user.send("ロール付与に失敗しました。運営に連絡してね。")
+            await self._notify_admin(
+                "VALO診断: ロール付与 例外",
+                f"{type(ex).__name__}: {ex}",
+                user,
+                s,
+                "_finalize:add_roles",
+            )
             return
 
         e = discord.Embed(
-            title="VALORANT ロール診断 完了",
-            description=(
-                f"✅ 判定：**{label}**\n"
-                f"スコア：**{score}/{self.max_score}**"
-            ),
+            title="VALORANT ロール診断 完了 🐶",
+            description=(f"✅ 判定：**{label}**\n" f"スコア：**{score}/{self.max_score}**"),
+            color=0xF4A261,
         )
-        await user.send(embed=e)
+
+        msg = s.get("dm_message")
+        if isinstance(msg, discord.Message):
+            try:
+                await msg.edit(embed=e, view=None)
+            except Exception:
+                await user.send(embed=e)
+        else:
+            await user.send(embed=e)
 
         uid = str(member.id)
         self.completed[uid] = {
@@ -402,45 +589,65 @@ class ValoCheckCog(commands.Cog):
             "score": score,
             "max_score": self.max_score,
             "result": label,
-            "answers": s["answers"],
+            "answers": s.get("answers", []),
             "invoked_by": s.get("invoked_by"),
             "invoked_by_name": s.get("invoked_by_name"),
             "forced": bool(s.get("forced")),
+            "force_enjoy": bool(s.get("force_enjoy")),
         }
         self._save_completed()
         await self._log_to_channel(guild, member, score, label, s)
 
-    async def _log_to_channel(self, guild: discord.Guild,
-                              member: discord.Member, score: int,
-                              label: str, s: dict):
+    async def _log_to_channel(
+        self,
+        guild: discord.Guild,
+        member: discord.Member,
+        score: int,
+        label: str,
+        s: dict,
+    ):
         ch = await self._get_log_channel(guild)
         if ch is None:
             return
 
         invoker = s.get("invoked_by_name", "unknown")
         forced = "YES" if s.get("forced") else "NO"
+        force_enjoy = "YES" if s.get("force_enjoy") else "NO"
+
+        answers = s.get("answers", [])
+        summary_line = self._build_summary_line(answers)
 
         e = discord.Embed(
             title="VALO ロール診断ログ",
             description=(
                 f"対象: {member.mention}\n"
+                f"🧾 {summary_line}\n"
                 f"結果: **{label}**\n"
                 f"スコア: **{score}/{self.max_score}**\n"
                 f"管理者: **{invoker}**\n"
-                f"force: **{forced}**"
+                f"force: **{forced}**\n"
+                f"force_enjoy(last2=0): **{force_enjoy}**"
             ),
+            color=0x264653,
         )
-        for i, ans in enumerate(s.get("answers", [])):
+
+        for i, a in enumerate(answers):
             q = self.questions[i]["q"]
-            e.add_field(name=q, value=ans, inline=False)
+            if isinstance(a, dict):
+                choice = a.get("choice", "")
+                pts = int(a.get("score", 0))
+                e.add_field(name=q, value=f"{choice}\n**{pts}点**", inline=False)
+            else:
+                e.add_field(name=q, value=str(a), inline=False)
+
         await ch.send(embed=e)
 
     @app_commands.command(
-        name="check_valo",
+        name="valo_role",
         description="管理者が指定したメンバーにDMで診断を送ります",
     )
     @app_commands.checks.has_permissions(administrator=True)
-    async def check_valo(
+    async def valo_role(
         self,
         interaction: discord.Interaction,
         member: discord.Member,
@@ -471,6 +678,13 @@ class ValoCheckCog(commands.Cog):
                 "質問が読み込めていません。運営に連絡してね。",
                 ephemeral=True,
             )
+            await self._notify_admin(
+                "VALO診断: 質問未ロード",
+                f"questions が空です。questions_path={self.questions_path}",
+                interaction.user,
+                None,
+                "/valo_role",
+            )
             return
 
         self.sessions[member.id] = {
@@ -480,6 +694,8 @@ class ValoCheckCog(commands.Cog):
             "invoked_by": interaction.user.id,
             "invoked_by_name": str(interaction.user),
             "forced": force,
+            "force_enjoy": False,
+            "done": False,
         }
 
         try:
@@ -490,6 +706,27 @@ class ValoCheckCog(commands.Cog):
                 "DMを送れませんでした。相手がサーバーDMを拒否しています。",
                 ephemeral=True,
             )
+            await self._notify_admin(
+                "VALO診断: DM送信失敗",
+                "相手がサーバーDM拒否のため intro DM を送れませんでした。",
+                member,
+                None,
+                "/valo_role",
+            )
+            return
+        except Exception as ex:
+            self.sessions.pop(member.id, None)
+            await interaction.followup.send(
+                "DMを送れませんでした。運営に連絡してね。",
+                ephemeral=True,
+            )
+            await self._notify_admin(
+                "VALO診断: DM送信 例外",
+                f"{type(ex).__name__}: {ex}",
+                member,
+                None,
+                "/valo_role",
+            )
             return
 
         await interaction.followup.send(
@@ -497,11 +734,11 @@ class ValoCheckCog(commands.Cog):
         )
 
     @app_commands.command(
-        name="reload_valo_questions",
+        name="valo_role_reload",
         description="valo_questions.json を再読み込みします（管理者のみ）",
     )
     @app_commands.checks.has_permissions(administrator=True)
-    async def reload_valo_questions(self, interaction: discord.Interaction):
+    async def valo_role_reload(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
         if len(self.sessions) > 0:
@@ -517,6 +754,13 @@ class ValoCheckCog(commands.Cog):
                 "質問の再読み込みに失敗しました。JSON形式/パスを確認してね。",
                 ephemeral=True,
             )
+            await self._notify_admin(
+                "VALO診断: リロード失敗",
+                f"questions_path={self.questions_path} の読み込みに失敗。",
+                interaction.user,
+                None,
+                "/valo_role_reload",
+            )
             return
 
         await interaction.followup.send(
@@ -526,11 +770,11 @@ class ValoCheckCog(commands.Cog):
         )
 
     @app_commands.command(
-        name="cancel_valo",
+        name="valo_role_cancel",
         description="指定メンバーの診断を中断します（判定なし・ロール付与なし）",
     )
     @app_commands.checks.has_permissions(administrator=True)
-    async def cancel_valo(
+    async def valo_role_cancel(
         self,
         interaction: discord.Interaction,
         member: discord.Member,
@@ -548,11 +792,11 @@ class ValoCheckCog(commands.Cog):
         )
 
     @app_commands.command(
-        name="cancel_valo_all",
+        name="valo_role_cancel_all",
         description="進行中の全診断を中断します（判定なし・ロール付与なし）",
     )
     @app_commands.checks.has_permissions(administrator=True)
-    async def cancel_valo_all(
+    async def valo_role_cancel_all(
         self,
         interaction: discord.Interaction,
         reason: str = "admin cancel all",
@@ -561,7 +805,9 @@ class ValoCheckCog(commands.Cog):
 
         ids = list(self.sessions.keys())
         if len(ids) == 0:
-            await interaction.followup.send("診断中のユーザーはいません。", ephemeral=True)
+            await interaction.followup.send(
+                "診断中のユーザーはいません。", ephemeral=True
+            )
             return
 
         cnt = 0
@@ -569,13 +815,14 @@ class ValoCheckCog(commands.Cog):
             ok = await self._cancel_session(uid, reason, interaction.user)
             if ok:
                 cnt += 1
+
         await interaction.followup.send(
             f"診断中セッションを {cnt} 件中断しました（判定なし）。",
             ephemeral=True,
         )
 
-    @check_valo.error
-    async def check_valo_error(
+    @valo_role.error
+    async def valo_role_error(
         self,
         interaction: discord.Interaction,
         error: app_commands.AppCommandError,
@@ -585,10 +832,17 @@ class ValoCheckCog(commands.Cog):
                 "このコマンドは管理者のみ実行できます。", ephemeral=True
             )
             return
+        await self._notify_admin(
+            "VALO診断: /valo_role error",
+            f"{type(error).__name__}: {error}",
+            interaction.user,
+            None,
+            "/valo_role.error",
+        )
         raise error
 
-    @reload_valo_questions.error
-    async def reload_valo_questions_error(
+    @valo_role_reload.error
+    async def valo_role_reload_error(
         self,
         interaction: discord.Interaction,
         error: app_commands.AppCommandError,
@@ -598,10 +852,17 @@ class ValoCheckCog(commands.Cog):
                 "このコマンドは管理者のみ実行できます。", ephemeral=True
             )
             return
+        await self._notify_admin(
+            "VALO診断: /valo_role_reload error",
+            f"{type(error).__name__}: {error}",
+            interaction.user,
+            None,
+            "/valo_role_reload.error",
+        )
         raise error
 
-    @cancel_valo.error
-    async def cancel_valo_error(
+    @valo_role_cancel.error
+    async def valo_role_cancel_error(
         self,
         interaction: discord.Interaction,
         error: app_commands.AppCommandError,
@@ -611,10 +872,17 @@ class ValoCheckCog(commands.Cog):
                 "このコマンドは管理者のみ実行できます。", ephemeral=True
             )
             return
+        await self._notify_admin(
+            "VALO診断: /valo_role_cancel error",
+            f"{type(error).__name__}: {error}",
+            interaction.user,
+            None,
+            "/valo_role_cancel.error",
+        )
         raise error
 
-    @cancel_valo_all.error
-    async def cancel_valo_all_error(
+    @valo_role_cancel_all.error
+    async def valo_role_cancel_all_error(
         self,
         interaction: discord.Interaction,
         error: app_commands.AppCommandError,
@@ -624,6 +892,13 @@ class ValoCheckCog(commands.Cog):
                 "このコマンドは管理者のみ実行できます。", ephemeral=True
             )
             return
+        await self._notify_admin(
+            "VALO診断: /valo_role_cancel_all error",
+            f"{type(error).__name__}: {error}",
+            interaction.user,
+            None,
+            "/valo_role_cancel_all.error",
+        )
         raise error
 
 

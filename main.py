@@ -4,55 +4,51 @@ import discord
 from dotenv import load_dotenv
 from discord.ext import commands
 
-# ======================================================
-# ✅ 設定ロード
-# ======================================================
 load_dotenv()
 intents = discord.Intents.all()
 
-bot = commands.Bot(
+COGS = [
+    "cogs.welcome",
+    "cogs.reaction_roles",
+    "cogs.valomap",
+    "cogs.leave_log",
+    "cogs.valocheck",
+    "cogs.valorecruit",
+    "cogs.dm_forward"
+]
+
+class MyBot(commands.Bot):
+    async def setup_hook(self) -> None:
+        for cog in COGS:
+            try:
+                await self.load_extension(cog)
+                print(f"✅ Loaded: {cog}")
+            except Exception as e:
+                print(f"❌ Failed to load {cog}: {e}")
+
+        guild = discord.Object(id=int(os.getenv("GUILD_ID")))
+
+        # Cog側の @app_commands.command をギルドに即反映させる
+        self.tree.copy_global_to(guild=guild)
+        await self.tree.sync(guild=guild)
+
+        print(
+            f"✅ Slash commands synced to guild {guild.id}: "
+            f"{[cmd.name for cmd in self.tree.get_commands(guild=guild)]}"
+        )
+
+bot = MyBot(
     command_prefix="/",
     intents=intents,
-    application_id=int(os.getenv("APPLICATION_ID"))
+    application_id=int(os.getenv("APPLICATION_ID")),
 )
 
-# ======================================================
-# ✅ 起動時イベント
-# ======================================================
 @bot.event
 async def on_ready():
-    guild = discord.Object(id=int(os.getenv("GUILD_ID")))
-    await bot.tree.sync(guild=guild)
-    print(f"✅ Slash commands synced to guild {guild.id}: "
-          f"{[cmd.name for cmd in bot.tree.get_commands(guild=guild)]}")
     print(f"✅ Logged in as {bot.user} ({bot.user.id})")
 
-# ======================================================
-# ✅ 応答テスト
-# ======================================================
-@bot.tree.command(name="pong", description="Botの応答テスト")
-async def pong(interaction: discord.Interaction):
-    await interaction.response.send_message("Pong! 🐾", ephemeral=True)
-
-# ======================================================
-# ✅ Cogロード
-# ======================================================
-async def load_all_cogs():
-    cogs = ["cogs.welcome", "cogs.reaction_roles", "cogs.valomap", "cogs.leave_log", "cogs.valo_check"]
-    for cog in cogs:
-        try:
-            await bot.load_extension(cog)
-            print(f"✅ Loaded: {cog}")
-        except Exception as e:
-            print(f"❌ Failed to load {cog}: {e}")
-
-# ======================================================
-# ✅ メインループ
-# ======================================================
 async def main():
-    async with bot:
-        await load_all_cogs()
-        await bot.start(os.getenv("DISCORD_TOKEN"))
+    await bot.start(os.getenv("DISCORD_TOKEN"))
 
 if __name__ == "__main__":
     asyncio.run(main())
