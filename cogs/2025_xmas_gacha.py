@@ -4,7 +4,7 @@ import os
 import random
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import discord
 from discord import app_commands
@@ -245,6 +245,22 @@ def _closed_embed() -> discord.Embed:
     return e
 
 
+async def _fetch_text_channel(
+    bot: commands.Bot,
+    channel_id: int,
+) -> Optional[Union[discord.TextChannel, discord.Thread]]:
+    ch = bot.get_channel(channel_id)
+    if isinstance(ch, (discord.TextChannel, discord.Thread)):
+        return ch
+    try:
+        fetched = await bot.fetch_channel(channel_id)
+    except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+        return None
+    if isinstance(fetched, (discord.TextChannel, discord.Thread)):
+        return fetched
+    return None
+
+
 class t_xmas_gacha_result_view(discord.ui.View):
     def __init__(self) -> None:
         super().__init__(timeout=300)
@@ -277,7 +293,9 @@ class t_xmas_gacha_result_view(discord.ui.View):
         if ok:
             _orig_set(data, gid, uid, None)
             _state_write(data)
-            await interaction.response.send_message("🎄まほうはおしまい🎄", ephemeral=True)
+            await interaction.response.send_message(
+                "🎄まほうはおしまい🎄", ephemeral=True
+            )
         else:
             await interaction.response.send_message(
                 "権限の都合で戻せなかった…！", ephemeral=True
@@ -341,8 +359,8 @@ class t_xmas_gacha_view(discord.ui.View):
             name=f"{interaction.user.display_name} に届いた贈り物",
             icon_url=interaction.user.display_avatar.url,
         )
-        #note = "世界が少しだけ変わった気がする" if changed else "戻す"
-        #e.set_footer(text=f"{note}")
+        note = "世界が少しだけ変わった" if changed else "世界は変えられなかった"
+        e.set_footer(text=f"{note} / 戻すボタンあり")
 
         await interaction.response.send_message(
             embed=e,
@@ -355,14 +373,20 @@ class t_xmas_gacha(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self.bot.add_view(t_xmas_gacha_view())
+        self._panel_posted = False
 
     async def _ensure_panel(self) -> None:
+        if self._panel_posted:
+            return
+        self._panel_posted = True
         if CHANNEL_ID == 0:
             return
+
         await self.bot.wait_until_ready()
-        ch = self.bot.get_channel(CHANNEL_ID)
-        if not isinstance(ch, (discord.TextChannel, discord.Thread)):
+        ch = await _fetch_text_channel(self.bot, CHANNEL_ID)
+        if ch is None:
             return
+
         data = _state_read()
         msg_id = int(data.get("panel_message_id", 0) or 0)
         if msg_id:
