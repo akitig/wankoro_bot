@@ -16,7 +16,6 @@ except ImportError:
     ZoneInfo = None
 
 
-
 def _get_env_str(key: str, default: str) -> str:
     v = os.getenv(key)
     if v is None or v.strip() == "":
@@ -130,7 +129,7 @@ def _panel_embed() -> discord.Embed:
         ),
         color=0x2ECC71,
     )
-    e.set_footer(text="戻すボタンあり（名前を元に戻せます）")
+    e.set_footer(text="元に戻せるよ")
     return e
 
 
@@ -196,11 +195,32 @@ def _orig_set(data: Dict, gid: int, uid: int, nick: Optional[str]) -> None:
     data["orig_nick"][str(gid)][str(uid)] = nick
 
 
-def _make_gacha_nick(name_no_at: str) -> str:
-    base = name_no_at.strip()
-    if not base:
-        return "@無名"
-    return f"@{base}"[:32]
+def _base_name(name: str) -> str:
+    s = name.strip()
+    if "＠" in s:
+        s = s.split("＠", 1)[0].strip()
+    if "@" in s:
+        s = s.split("@", 1)[0].strip()
+    if not s:
+        return "unknown"
+    return s
+
+
+def _make_gacha_nick(display_name: str, alias: str) -> str:
+    base = _base_name(display_name)
+    aka = alias.strip() if alias else "無名"
+    nick = f"{base}＠{aka}"
+    return nick[:32]
+
+
+def _save_orig_once(state: Dict, gid: int, uid: int,
+                    member: discord.Member) -> None:
+    if _orig_get(state, gid, uid) is not None:
+        return
+    if member.nick is None:
+        _orig_set(state, gid, uid, None)
+        return
+    _orig_set(state, gid, uid, _base_name(member.nick))
 
 
 async def _try_set_nick(member: discord.Member, nick: Optional[str]) -> bool:
@@ -210,16 +230,16 @@ async def _try_set_nick(member: discord.Member, nick: Optional[str]) -> bool:
     except (discord.Forbidden, discord.HTTPException):
         return False
 
+
 def _closed_embed() -> discord.Embed:
     if random.random() < 0.1:
         msg = random.choice(CLOSED_MESSAGES_NEXT_YEAR)
     else:
         msg = random.choice(CLOSED_MESSAGES_MAIN)
-
     e = discord.Embed(
         title="🎄 クリスマスは終わった",
         description=msg,
-        color=0x2B2B2B,  # 暗めのグレー
+        color=0x2B2B2B,
     )
     e.set_footer(text="また来年")
     return e
@@ -257,7 +277,7 @@ class t_xmas_gacha_result_view(discord.ui.View):
         if ok:
             _orig_set(data, gid, uid, None)
             _state_write(data)
-            await interaction.response.send_message("名前を戻したよ。🎄", ephemeral=True)
+            await interaction.response.send_message("🎄まほうはおしまい🎄", ephemeral=True)
         else:
             await interaction.response.send_message(
                 "権限の都合で戻せなかった…！", ephemeral=True
@@ -283,15 +303,12 @@ class t_xmas_gacha_view(discord.ui.View):
                 "サーバー内で使ってね。", ephemeral=True
             )
             return
-
         if _is_closed():
             await interaction.response.send_message(
                 embed=_closed_embed(),
                 ephemeral=True,
             )
             return
-
-
 
         rewards = _read_csv_rewards()
         r = _pick_reward(rewards)
@@ -306,11 +323,10 @@ class t_xmas_gacha_view(discord.ui.View):
         state = _state_read()
         gid = interaction.guild.id
         uid = interaction.user.id
-        if _orig_get(state, gid, uid) is None:
-            _orig_set(state, gid, uid, interaction.user.nick)
-            _state_write(state)
+        _save_orig_once(state, gid, uid, interaction.user)
+        _state_write(state)
 
-        new_nick = _make_gacha_nick(r.name)
+        new_nick = _make_gacha_nick(interaction.user.display_name, r.name)
         changed = await _try_set_nick(interaction.user, new_nick)
 
         icon = r.icon if r.icon else "🎁"
@@ -320,13 +336,13 @@ class t_xmas_gacha_view(discord.ui.View):
             description=r.desc,
             color=_rarity_color(r.rarity),
         )
-        e.add_field(name="通り名", value=f"`{new_nick}`", inline=False)
+        e.add_field(name="", value=f"`{new_nick}`", inline=False)
         e.set_author(
             name=f"{interaction.user.display_name} に届いた贈り物",
             icon_url=interaction.user.display_avatar.url,
         )
-        note = "（名前がちょっと変わった）" if changed else "（名前変更できなかった）"
-        e.set_footer(text=f"{note} / 戻すボタンあり")
+        #note = "世界が少しだけ変わった気がする" if changed else "戻す"
+        #e.set_footer(text=f"{note}")
 
         await interaction.response.send_message(
             embed=e,
