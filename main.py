@@ -14,7 +14,8 @@ COGS = [
     "cogs.leave_log",
     "cogs.valocheck",
     "cogs.valorecruit",
-    "cogs.dm_forward"
+    "cogs.dm_forward",
+    "cogs.2025_xmas_gacha"
 ]
 
 class MyBot(commands.Bot):
