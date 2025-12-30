@@ -91,6 +91,17 @@ class _JoyaStore:
         key = f"{guild_id}:{user_id}"
         return u.setdefault(key, {})
 
+    def reset_guild_all(self, guild_id: int) -> int:
+        g = self._data.setdefault("guilds", {})
+        g[str(guild_id)] = {}
+        u = self._data.setdefault("users", {})
+        prefix = f"{guild_id}:"
+        keys = [k for k in u.keys() if k.startswith(prefix)]
+        for k in keys:
+            del u[k]
+        self.save()
+        return len(keys)
+
 
 class JoyaView(discord.ui.View):
     def __init__(self, disabled: bool = False) -> None:
@@ -101,7 +112,7 @@ class JoyaView(discord.ui.View):
                     item.disabled = True
 
     @discord.ui.button(
-        label="🔔 鳴らす 🔔",
+        label="🔔 除夜の鐘を鳴らす",
         style=discord.ButtonStyle.primary,
         custom_id="joya:ring",
     )
@@ -127,6 +138,7 @@ class JoyaGacha(commands.Cog):
         self._max_env = _get_int_env("JOYA_MAX_SEC", 300)
         self._role_id = _get_int_env("JOYA_WINNER_ROLE_ID", 0)
         self._channel_id = _get_int_env("JOYA_CHANNEL_ID", 0)
+        self._block_role_id = 1451758143636901960
         path = os.getenv("JOYA_DATA_PATH", "./data/joya_state.json")
         self._store = _JoyaStore(path)
         self._locks: Dict[int, asyncio.Lock] = {}
@@ -258,6 +270,12 @@ class JoyaGacha(commands.Cog):
         except Exception:
             return
 
+    def _has_block_role(self, member: discord.Member) -> bool:
+        for r in member.roles:
+            if r.id == self._block_role_id:
+                return True
+        return False
+
     async def handle_joya(self, interaction: discord.Interaction) -> None:
         if not interaction.guild or not interaction.user:
             if interaction.response.is_done():
@@ -287,6 +305,21 @@ class JoyaGacha(commands.Cog):
                 await interaction.followup.send(msg)
                 return
 
+            member = interaction.guild.get_member(user_id)
+            if not isinstance(member, discord.Member):
+                await interaction.followup.send(
+                    "メンバー情報が取れない。もう一回押して。"
+                )
+                return
+
+            if count == 107 and self._has_block_role(member):
+                await interaction.followup.send(
+                    f"{member.mention}\n"
+                    "なぜだろう、不思議な力で阻まれて"
+                    "鐘を鳴らせない……。"
+                )
+                return
+
             left = self._cooldown_left(guild_id, user_id)
             if left > 0:
                 await interaction.followup.send(
@@ -311,15 +344,8 @@ class JoyaGacha(commands.Cog):
                 await interaction.followup.send(self._normal_msg(count, cd))
                 return
 
-            member = interaction.guild.get_member(user_id)
             self._set_count_state(guild_id, 108, True, user_id)
             await self._disable_panel_if_any(interaction.guild)
-
-            if not isinstance(member, discord.Member):
-                await interaction.followup.send(
-                    "108回目……だが、付与対象が見つからなかった。"
-                )
-                return
 
             role = interaction.guild.get_role(self._role_id)
             if role is None:
@@ -409,6 +435,7 @@ class JoyaGacha(commands.Cog):
             f"⏱ クールダウン: **{_fmt_mmss(cfg.cd_min_sec)}"
             f" 〜 {_fmt_mmss(cfg.cd_max_sec)}**\n"
             f"🏷 ロールID: **{self._role_id}**\n"
+            f"🛑 ブロックロールID: **{self._block_role_id}**\n"
             f"📍 パネルch: **{pch if isinstance(pch, int) else '未'}**\n"
             f"🧷 パネルmsg: **{pmsg if isinstance(pmsg, int) else '未'}**"
         )
@@ -462,9 +489,29 @@ class JoyaGacha(commands.Cog):
             ephemeral=True,
         )
 
+    @app_commands.command(
+        name="joya_reset_all",
+        description="除夜の鐘の状態を完全リセット（回数/勝者/CD/パネル情報）",
+    )
+    @app_commands.check(_only_user(746347536100360283))
+    async def joya_reset_all(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message(
+                "サーバー内で使ってね。", ephemeral=True
+            )
+            return
+        guild_id = interaction.guild.id
+        async with self._lock(guild_id):
+            removed = self._store.reset_guild_all(guild_id)
+        await interaction.response.send_message(
+            f"完全リセットした。クールダウン情報 {removed} 件を削除。",
+            ephemeral=True,
+        )
+
     @joya_panel.error
     @joya_config.error
     @joya_config_reset.error
+    @joya_reset_all.error
     async def _cmd_err(
         self,
         interaction: discord.Interaction,
