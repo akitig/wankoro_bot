@@ -64,7 +64,7 @@ class Welcome(commands.Cog):
         return discord.Embed(
             title="🌸 はじめまして！",
             description=(
-                "灯麗会（とうれいかい）の犬、本部長のわんころです🐶✨\n\n"
+                "灯麗会（とうれいかい）の犬、事務局長のわんころです🐶✨\n\n"
                 "会長 hanna から、新しくお迎えする方へのお手紙を預かってきました！\n\n"
                 "---\n\n"
                 "## 🕯 ご参加ありがとうございます！\n"

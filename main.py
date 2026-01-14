@@ -15,7 +15,9 @@ COGS = [
     "cogs.valocheck",
     "cogs.valorecruit",
     "cogs.dm_forward",
-    "cogs.2025_xmas_gacha"
+    "cogs.2025_xmas_gacha",
+    "cogs.2026_joya_gacha",
+    "cogs.2026_omikuji_gacha",
 ]
 
 class MyBot(commands.Bot):

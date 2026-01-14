@@ -1,10 +1,11 @@
+import asyncio
 import csv
 import json
 import os
 import random
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple
 
 import discord
 from discord import app_commands
@@ -14,6 +15,8 @@ try:
     from zoneinfo import ZoneInfo
 except ImportError:
     ZoneInfo = None
+
+STATE_NONE = "__NONE__"
 
 
 def _get_env_str(key: str, default: str) -> str:
@@ -120,12 +123,24 @@ def _panel_embed() -> discord.Embed:
     e = discord.Embed(
         title="🎄 灯麗会｜クリスマス贈り物ガチャ 🎄",
         description=(
-            "ボタンを押すだけで “クリスマスっぽい何か” が1つ届きます。\n"
-            "たま〜に **UR**（やばいやつ）も出る。\n\n"
-            "**▼ レアリティ**\n"
-            "UR：とびきり特別 / SR：ご褒美 / R：ちょい嬉しい / N：小さく灯る\n\n"
+            "12/24 と 12/25。\n"
+            "なんか街がやたら光ってて、みんなちょっとだけ浮つく日。\n"
+            "こういう日は「贈り物」も勝手に増えるらしい。\n\n"
+            "というわけで灯麗会にも、こっそり **クリスマス贈り物ガチャ** 置いときました。\n\n"
+            "ボタンを押すだけで、\n"
+            "あったかい一言 / 季節のちいさなラッキー / "
+            "サンタの落とし物みたいな謎アイテム…\n"
+            "“クリスマスっぽい何か”が1つあなたに届きます。\n\n"
+            "たま〜に **UR（やばいやつ）** も出る。\n"
+            "1回だけでも、連打でも、気分でどうぞ。\n\n"
+            "▼ レアリティ\n\n"
+            "UR：とびきり特別なクリスマスギフト\n"
+            "SR：季節がくれたご褒美\n"
+            "R：ちょい嬉しい小物\n"
+            "N：日常に小さく灯るやつ\n\n"
             f"⏳ **締切：{cutoff_str}（JST）以降は引けません**\n"
-            "結果は **本人にだけ** 見えます。"
+            "結果は **本人にだけ** 見えます。\n\n"
+            "では、良いクリスマスを。🎁"
         ),
         color=0x2ECC71,
     )
@@ -168,7 +183,12 @@ def _state_read() -> Dict:
         return {"orig_nick": {}, "panel_message_id": 0}
     try:
         with open(STATE_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        if "orig_nick" not in data or not isinstance(data["orig_nick"], dict):
+            data["orig_nick"] = {}
+        if "panel_message_id" not in data:
+            data["panel_message_id"] = 0
+        return data
     except Exception:
         return {"orig_nick": {}, "panel_message_id": 0}
 
@@ -183,16 +203,29 @@ def _state_write(data: Dict) -> None:
 
 def _orig_get(data: Dict, gid: int, uid: int) -> Optional[str]:
     g = data.get("orig_nick", {}).get(str(gid), {})
-    return g.get(str(uid))
+    v = g.get(str(uid))
+    if v is None:
+        return None
+    if v == STATE_NONE:
+        return STATE_NONE
+    if isinstance(v, str):
+        return v
+    return None
 
 
 def _orig_set(data: Dict, gid: int, uid: int, nick: Optional[str]) -> None:
     data.setdefault("orig_nick", {})
     data["orig_nick"].setdefault(str(gid), {})
     if nick is None:
-        data["orig_nick"][str(gid)].pop(str(uid), None)
+        data["orig_nick"][str(gid)][str(uid)] = STATE_NONE
         return
     data["orig_nick"][str(gid)][str(uid)] = nick
+
+
+def _orig_clear(data: Dict, gid: int, uid: int) -> None:
+    data.setdefault("orig_nick", {})
+    data["orig_nick"].setdefault(str(gid), {})
+    data["orig_nick"][str(gid)].pop(str(uid), None)
 
 
 def _base_name(name: str) -> str:
@@ -213,8 +246,7 @@ def _make_gacha_nick(display_name: str, alias: str) -> str:
     return nick[:32]
 
 
-def _save_orig_once(state: Dict, gid: int, uid: int,
-                    member: discord.Member) -> None:
+def _save_orig_once(state: Dict, gid: int, uid: int, member: discord.Member) -> None:
     if _orig_get(state, gid, uid) is not None:
         return
     if member.nick is None:
@@ -245,22 +277,6 @@ def _closed_embed() -> discord.Embed:
     return e
 
 
-async def _fetch_text_channel(
-    bot: commands.Bot,
-    channel_id: int,
-) -> Optional[Union[discord.TextChannel, discord.Thread]]:
-    ch = bot.get_channel(channel_id)
-    if isinstance(ch, (discord.TextChannel, discord.Thread)):
-        return ch
-    try:
-        fetched = await bot.fetch_channel(channel_id)
-    except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-        return None
-    if isinstance(fetched, (discord.TextChannel, discord.Thread)):
-        return fetched
-    return None
-
-
 class t_xmas_gacha_result_view(discord.ui.View):
     def __init__(self) -> None:
         super().__init__(timeout=300)
@@ -280,22 +296,39 @@ class t_xmas_gacha_result_view(discord.ui.View):
                 "サーバー内で使ってね。", ephemeral=True
             )
             return
+
         data = _state_read()
         gid = interaction.guild.id
         uid = interaction.user.id
         orig = _orig_get(data, gid, uid)
+
         if orig is None:
+            # 救済：今のニックから＠前を取って戻す
+            cur = interaction.user.nick or ""
+            base = _base_name(cur) if cur else ""
+            if "＠" in cur or "@" in cur:
+                ok = await _try_set_nick(interaction.user, base or None)
+                if ok:
+                    await interaction.response.send_message(
+                        "🎄まほうはおしまい🎄（復元で戻した）",
+                        ephemeral=True,
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "権限の都合で戻せなかった…！", ephemeral=True
+                    )
+                return
             await interaction.response.send_message(
                 "戻す元の名前が見つからなかった…！", ephemeral=True
             )
             return
-        ok = await _try_set_nick(interaction.user, orig if orig else None)
+
+        target = None if orig == STATE_NONE else orig
+        ok = await _try_set_nick(interaction.user, target)
         if ok:
-            _orig_set(data, gid, uid, None)
+            _orig_clear(data, gid, uid)
             _state_write(data)
-            await interaction.response.send_message(
-                "🎄まほうはおしまい🎄", ephemeral=True
-            )
+            await interaction.response.send_message("🎄まほうはおしまい🎄", ephemeral=True)
         else:
             await interaction.response.send_message(
                 "権限の都合で戻せなかった…！", ephemeral=True
@@ -321,6 +354,7 @@ class t_xmas_gacha_view(discord.ui.View):
                 "サーバー内で使ってね。", ephemeral=True
             )
             return
+
         if _is_closed():
             await interaction.response.send_message(
                 embed=_closed_embed(),
@@ -333,7 +367,8 @@ class t_xmas_gacha_view(discord.ui.View):
         if r is None:
             await interaction.response.send_message(
                 "ガチャ表が読めない！\n"
-                "CSVのヘッダが weight,rarity,icon,title,name,desc になってるか確認してね。",
+                "CSVのヘッダが weight,rarity,icon,title,name,desc "
+                "になってるか確認してね。",
                 ephemeral=True,
             )
             return
@@ -359,8 +394,8 @@ class t_xmas_gacha_view(discord.ui.View):
             name=f"{interaction.user.display_name} に届いた贈り物",
             icon_url=interaction.user.display_avatar.url,
         )
-        note = "世界が少しだけ変わった" if changed else "世界は変えられなかった"
-        e.set_footer(text=f"{note} / 戻すボタンあり")
+        note = "世界が少しだけ変わった気がする" if changed else "名前は変えられなかった"
+        e.set_footer(text=note)
 
         await interaction.response.send_message(
             embed=e,
@@ -369,24 +404,41 @@ class t_xmas_gacha_view(discord.ui.View):
         )
 
 
+def _restore_target_from_state_or_nick(
+    state: Dict, guild_id: int, member: discord.Member
+) -> Tuple[Optional[str], bool]:
+    """
+    Returns (target_nick, should_clear_state).
+    target_nick: None means set nick to None.
+    """
+    orig = _orig_get(state, guild_id, member.id)
+    if orig is not None:
+        if orig == STATE_NONE:
+            return (None, True)
+        return (orig, True)
+
+    # no record -> salvage from current nick (strip alias)
+    cur = member.nick or ""
+    if "＠" in cur or "@" in cur:
+        base = _base_name(cur)
+        if base == "unknown":
+            return (None, False)
+        return (base, False)
+    return (None, False)
+
+
 class t_xmas_gacha(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self.bot.add_view(t_xmas_gacha_view())
-        self._panel_posted = False
 
     async def _ensure_panel(self) -> None:
-        if self._panel_posted:
-            return
-        self._panel_posted = True
         if CHANNEL_ID == 0:
             return
-
         await self.bot.wait_until_ready()
-        ch = await _fetch_text_channel(self.bot, CHANNEL_ID)
-        if ch is None:
+        ch = self.bot.get_channel(CHANNEL_ID)
+        if not isinstance(ch, (discord.TextChannel, discord.Thread)):
             return
-
         data = _state_read()
         msg_id = int(data.get("panel_message_id", 0) or 0)
         if msg_id:
@@ -421,6 +473,96 @@ class t_xmas_gacha(commands.Cog):
             view=t_xmas_gacha_view(),
             ephemeral=True,
         )
+
+    @app_commands.command(
+        name="xmas_gacha_revert_all",
+        description="ガチャで変わった名前を、可能な限り全員戻す",
+    )
+    @app_commands.default_permissions(manage_guild=True)
+    async def xmas_gacha_revert_all(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild:
+            await interaction.response.send_message("サーバー内で使ってね。", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        state = _state_read()
+        gid = interaction.guild.id
+        gmap = state.get("orig_nick", {}).get(str(gid), {})
+        targets = set()
+
+        # stateにいる人
+        for uid_str in list(gmap.keys()):
+            try:
+                targets.add(int(uid_str))
+            except ValueError:
+                continue
+
+        # stateにいなくても「＠が付いてる」人は救済対象にしたい
+        # ただし全メンバーfetchは重いので、キャッシュにいる範囲 + ロール管理で十分
+        # (必要なら members intent + chunk)
+        if interaction.guild.chunked is False:
+            try:
+                await interaction.guild.chunk()
+            except Exception:
+                pass
+
+        salvage_members: List[discord.Member] = []
+        for m in interaction.guild.members:
+            if not isinstance(m, discord.Member):
+                continue
+            if m.nick and ("＠" in m.nick or "@" in m.nick):
+                salvage_members.append(m)
+
+        for m in salvage_members:
+            targets.add(m.id)
+
+        ok_count = 0
+        fail_count = 0
+        skip_count = 0
+        cleared = 0
+
+        for uid in list(targets):
+            member = interaction.guild.get_member(uid)
+            if member is None:
+                skip_count += 1
+                continue
+
+            target_nick, should_clear = _restore_target_from_state_or_nick(
+                state, gid, member
+            )
+
+            # target_nick が None で、nick自体も None の場合は何もしない
+            if target_nick is None and member.nick is None:
+                if should_clear:
+                    _orig_clear(state, gid, uid)
+                    cleared += 1
+                skip_count += 1
+                continue
+
+            ok = await _try_set_nick(member, target_nick)
+            if ok:
+                ok_count += 1
+                if should_clear:
+                    _orig_clear(state, gid, uid)
+                    cleared += 1
+            else:
+                fail_count += 1
+
+            await asyncio.sleep(0.8)
+
+        _state_write(state)
+
+        msg = (
+            "🎄 全員戻し：結果\n"
+            f"✅ 成功：{ok_count}\n"
+            f"❌ 失敗：{fail_count}（だいたい権限/ロール階層）\n"
+            f"⏭️ 変更なし/対象外：{skip_count}\n"
+            f"🧾 state消去：{cleared}\n\n"
+            "失敗が残る場合は、Botロールを対象より上にして、"
+            "`Manage Nicknames` を確認してね。"
+        )
+        await interaction.followup.send(msg, ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:

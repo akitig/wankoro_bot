@@ -136,7 +136,7 @@ class CompTypeSelect(discord.ui.Select):
             return
         if not any(r.id == picked_role_id for r in member.roles):
             await interaction.response.send_message(
-                "そのロールに所属してないから選べないよ。",
+                "自分の所属しているロールを選んでね。",
                 ephemeral=True,
             )
             return
