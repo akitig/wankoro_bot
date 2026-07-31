@@ -177,22 +177,5 @@ class ReactionRoles(commands.Cog):
         embed.add_field(name="カスタム絵文字 → ロール", value="\n".join(lines), inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=False)
 
-    # ======================================================
-    # 起動時同期
-    # ======================================================
-    @commands.Cog.listener()
-    async def on_ready(self):
-        guild = discord.Object(id=self.GUILD_ID)
-        try:
-            self.bot.tree.add_command(self.rrcreate, guild=guild)
-            self.bot.tree.add_command(self.rrcreate_valorank, guild=guild)
-            self.bot.tree.add_command(self.rrreload, guild=guild)
-            self.bot.tree.add_command(self.rrstatus, guild=guild)
-            await self.bot.tree.sync(guild=guild)
-            logger.info("Reaction Role commands synced")
-        except Exception:
-            logger.exception("Failed to sync Reaction Role commands")
-
-
 async def setup(bot):
     await bot.add_cog(ReactionRoles(bot))

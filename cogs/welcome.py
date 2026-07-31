@@ -218,20 +218,5 @@ class Welcome(commands.Cog):
             ephemeral=False
         )
 
-    # ------------------------------------------------------
-    # ✅ 起動後同期
-    # ------------------------------------------------------
-    @commands.Cog.listener()
-    async def on_ready(self):
-        guild = discord.Object(id=self.GUILD_ID)
-        try:
-            self.bot.tree.add_command(self.welcome_slash, guild=guild)
-            self.bot.tree.add_command(self.ok_slash, guild=guild)
-            synced = await self.bot.tree.sync(guild=guild)
-            logger.info("Welcome commands synced: count=%d", len(synced))
-        except Exception:
-            logger.exception("Failed to sync welcome commands")
-
-
 async def setup(bot):
     await bot.add_cog(Welcome(bot))

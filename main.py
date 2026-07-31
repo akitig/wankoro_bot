@@ -65,6 +65,8 @@ async def on_ready():
 async def main():
     logger.info("Bot startup requested")
     try:
+        if not config.discord_token:
+            raise RuntimeError("Missing environment variable: DISCORD_TOKEN")
         await bot.start(config.discord_token)
     except Exception:
         logger.critical("Bot startup failed", exc_info=True)
