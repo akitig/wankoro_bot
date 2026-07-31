@@ -69,6 +69,7 @@ class FakeChannel:
         self.mention = "#test-channel"
         self.send_error = send_error
         self.sent: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+        self.edits: list[dict[str, Any]] = []
 
     async def send(self, *args: Any, **kwargs: Any) -> FakeSentMessage:
         if self.send_error:
@@ -83,6 +84,9 @@ class FakeChannel:
             embed_links=True,
             manage_messages=True,
         )
+
+    async def edit(self, **kwargs: Any) -> None:
+        self.edits.append(kwargs)
 
 
 class FakeGuild:

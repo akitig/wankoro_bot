@@ -1,19 +1,17 @@
 import logging
-import random
 import discord
 from discord.ext import commands
 from discord.ui import View, Button
 from discord import app_commands
 
 from config import get_config
+from services.welcome_service import WelcomeService
 
 logger = logging.getLogger(__name__)
 
 class Welcome(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.user_answers = {}
-        self.processing_users = set()
 
         # --- 環境変数設定 ---
         config = get_config()
@@ -30,6 +28,12 @@ class Welcome(commands.Cog):
         self.LOG_CATEGORY_NAME = "log"
 
         self.MANAGER_ROLE_IDS = set(config.manager_role_ids)
+        self.service = WelcomeService(
+            bot,
+            guild_id=self.GUILD_ID,
+            admin_id=self.ADMIN_ID,
+            staff_role_ids=(self.ROLE_A, self.ROLE_B, self.ROLE_C),
+        )
 
     # ------------------------------------------------------
     # ✅ 管理者判定
@@ -38,29 +42,6 @@ class Welcome(commands.Cog):
         if member.id == self.ADMIN_ID:
             return True
         return any(role.id in self.MANAGER_ROLE_IDS for role in member.roles)
-
-    # ------------------------------------------------------
-    # ✅ 担当者ランダム選出
-    # ------------------------------------------------------
-    async def pick_staff(self, guild: discord.Guild):
-        roleA = guild.get_role(self.ROLE_A)
-        roleB = guild.get_role(self.ROLE_B)
-        roleC = guild.get_role(self.ROLE_C)
-
-        candidates = [
-            m for m in guild.members
-            if (roleA in m.roles) or (roleB in m.roles) or (roleC in m.roles)
-        ]
-        if not candidates:
-            return None
-
-        vc_members = []
-        for vc in guild.voice_channels:
-            for m in vc.members:
-                if m in candidates:
-                    vc_members.append(m)
-
-        return random.choice(vc_members) if vc_members else random.choice(candidates)
 
     # ------------------------------------------------------
     # ✅ Welcome Embed
@@ -96,7 +77,7 @@ class Welcome(commands.Cog):
         async def yes(self, i, b):
             if i.user != self.member:
                 return await i.response.send_message("あなた専用です！", ephemeral=True)
-            self.cog.user_answers[self.member.id]["age"] = "25歳以上"
+            self.cog.service.set_answer(self.member.id, "age", "25歳以上")
             await i.response.edit_message(
                 content="🧩 **Q2. 性別は？**",
                 view=self.cog.Question2(self.cog, self.member)
@@ -106,7 +87,7 @@ class Welcome(commands.Cog):
         async def no(self, i, b):
             if i.user != self.member:
                 return await i.response.send_message("あなた専用です！", ephemeral=True)
-            self.cog.user_answers[self.member.id]["age"] = "25歳未満"
+            self.cog.service.set_answer(self.member.id, "age", "25歳未満")
             await i.response.edit_message(
                 content="🧩 **Q2. 性別は？**",
                 view=self.cog.Question2(self.cog, self.member)
@@ -121,7 +102,7 @@ class Welcome(commands.Cog):
         async def set_gender(self, i, gender):
             if i.user != self.member:
                 return await i.response.send_message("あなた専用です！", ephemeral=True)
-            self.cog.user_answers[self.member.id]["gender"] = gender
+            self.cog.service.set_answer(self.member.id, "gender", gender)
             await i.response.edit_message(
                 content="🧩 **Q3. 来れる時間帯は？（複数選択可）**",
                 view=self.cog.Question3(self.cog, self.member)
@@ -146,14 +127,11 @@ class Welcome(commands.Cog):
             if i.user != self.member:
                 return await i.response.send_message("あなた専用です！", ephemeral=True)
             await i.response.defer()
-            ans = self.cog.user_answers[self.member.id]
-            ans.setdefault("time", [])
-            if label in ans["time"]:
-                ans["time"].remove(label)
+            times = self.cog.service.toggle_time(self.member.id, label)
+            if label not in times:
                 b.label = label
                 b.style = discord.ButtonStyle.green
             else:
-                ans["time"].append(label)
                 b.label = f"✅ {label}"
                 b.style = discord.ButtonStyle.blurple
             await i.message.edit(view=self)
@@ -171,7 +149,7 @@ class Welcome(commands.Cog):
         async def done(self, i, b):
             if i.user != self.member:
                 return await i.response.send_message("あなた専用です！", ephemeral=True)
-            ans = self.cog.user_answers[self.member.id]
+            ans = self.cog.service.get_answers(self.member.id)
             times = ", ".join(ans.get("time", [])) or "未回答"
             staff_id = ans.get("staff_id", self.cog.ADMIN_ID)
             summary = (
@@ -184,91 +162,18 @@ class Welcome(commands.Cog):
             await i.response.edit_message(content=summary, view=None)
 
     # ------------------------------------------------------
-    # ✅ チャンネル作成処理
-    # ------------------------------------------------------
-    async def create_welcome_room(self, member):
-        guild = self.bot.get_guild(self.GUILD_ID)
-
-        if member.id in self.processing_users:
-            logger.warning("Skipped duplicate welcome workflow")
-            return None
-        self.processing_users.add(member.id)
-
-        try:
-            staff = await self.pick_staff(guild)
-            staff_id = staff.id if staff else self.ADMIN_ID
-            staff_mention = staff.mention if staff else f"<@{self.ADMIN_ID}>"
-            self.user_answers[member.id] = {"staff_id": staff_id}
-
-            category = discord.utils.get(guild.categories, name=self.WELCOME_CATEGORY_NAME)
-            if category is None:
-                category = await guild.create_category(self.WELCOME_CATEGORY_NAME)
-
-            base = f"welcome-{member.name.lower()}"
-            name = base
-            i = 2
-            while discord.utils.get(guild.channels, name=name):
-                name = f"{base}-{i}"
-                i += 1
-
-            overwrites = {
-                guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                member: discord.PermissionOverwrite(view_channel=True, send_messages=True),
-                guild.me: discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=True,
-                    manage_messages=True,
-                    embed_links=True,
-                    attach_files=True,
-                    read_message_history=True,
-                    add_reactions=True,
-                    use_external_emojis=True,
-                    use_external_stickers=True,
-                ),
-            }
-            if staff:
-                overwrites[staff] = discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=True,
-                    read_message_history=True
-                )
-
-            ch = await guild.create_text_channel(name, category=category, overwrites=overwrites)
-
-            try:
-                await ch.send(f"🔥 ようこそ {member.mention} さん！\n案内担当 → {staff_mention}")
-                await ch.send(embed=self.welcome_embed())
-                await ch.send("🧩 **Q1. 25歳以上ですか？**", view=self.Question1(self, member))
-            except discord.Forbidden:
-                            logger.exception("Bot cannot send messages to a welcome channel")
-                            perms = ch.permissions_for(guild.me)
-                            logger.debug(
-                                "Welcome channel permissions: view=%s send=%s embed=%s manage=%s",
-                                perms.view_channel,
-                                perms.send_messages,
-                                perms.embed_links,
-                                perms.manage_messages,
-                            )
-                            return None
-
-            return ch
-
-        except discord.Forbidden:
-            logger.exception("Missing permission while creating a welcome channel")
-            return None
-
-        finally:
-            self.processing_users.discard(member.id)
-
-    # ------------------------------------------------------
     # ✅ on_member_join（競合防止）
     # ------------------------------------------------------
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        if member.id in self.processing_users:
+        if self.service.is_processing(member.id):
             logger.warning("Skipped automatic welcome while manual workflow is active")
             return
-        await self.create_welcome_room(member)
+        await self.service.create_welcome_room(
+            member,
+            welcome_embed=self.welcome_embed,
+            question_view=lambda: self.Question1(self, member),
+        )
 
     # ------------------------------------------------------
     # ✅ /welcome コマンド
@@ -278,7 +183,11 @@ class Welcome(commands.Cog):
         if not self.is_manager(interaction.user):
             return await interaction.response.send_message("⛔ 管理者のみ実行可", ephemeral=True)
 
-        ch = await self.create_welcome_room(user)
+        ch = await self.service.create_welcome_room(
+            user,
+            welcome_embed=self.welcome_embed,
+            question_view=lambda: self.Question1(self, user),
+        )
         if ch is None:
             return await interaction.response.send_message(
                 "❌ チャンネル作成に失敗しました。Botの権限を確認してください。",
