@@ -40,6 +40,54 @@ later migration must preserve and back up the live files, change application
 paths, validate the copied data, and only then remove the old paths from the Git
 index. That migration is intentionally outside this change.
 
+## Production deployment gate
+
+The following mutable runtime files are still tracked by Git:
+
+- `data/valo_check_completed.json`
+- `data/2026_omikujii_points.json`
+- `data/2026_joya_state.json`
+- `data/xmas_gacha_state.json`
+
+The matching `.gitignore` rules only prevent new untracked files from being
+added. They do not protect files already present in the Git index. An in-place
+checkout, pull, reset, archive extraction, or deployment copy can therefore
+replace state written by the running Bot.
+
+Before production deployment, the operator must take a consistent backup of
+all live runtime JSON and complete a restore test in a temporary directory. The
+backup must be retained independently from the Git worktree and application
+rollback artifacts.
+
+### Proposed Git tracking removal
+
+After the live paths have been migrated and verified, a separately reviewed
+change may remove only the runtime paths from the index with `git rm --cached`.
+That change must not delete or replace the live files, and must verify the
+resulting deployment package no longer contains runtime state. This hardening
+change intentionally does not alter the index.
+
+### Proposed worktree-external layout
+
+Prefer a deployment-owned directory such as `/var/lib/wankorobot/`, with one
+subdirectory per feature. Configure every runtime path through the existing
+environment settings, copy the live files while writers are stopped during an
+approved maintenance window, preserve restrictive permissions, and verify the
+service user can create temporary files and atomically replace the destination.
+
+### Deployment and rollback
+
+Do not perform a normal in-place Git deployment while the four files remain
+tracked unless the deployment process has been proven to exclude them. Before
+starting the candidate revision, record SHA-256 hashes and application-level
+counts for the backup and migrated copies. After startup, verify configured
+paths and counts before accepting writes.
+
+Application rollback and data rollback are separate operations. Roll back code
+without copying repository JSON over live state. Restore runtime data only from
+the verified backup, with writers stopped, then recheck hashes, ownership, file
+mode, JSON validity, and expected record counts before restarting the service.
+
 ## Persistence requirements
 
 Future runtime storage must provide:

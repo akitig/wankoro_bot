@@ -216,24 +216,8 @@ class ValorantMap(commands.Cog):
         embed.set_footer(text="Powered by わんころBot🐶")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    # -------------------------------
-    # 🔹 起動時同期
-    # -------------------------------
     @commands.Cog.listener()
     async def on_ready(self):
-        guild = discord.Object(id=self.config.guild_id)
-        try:
-            self.bot.tree.add_command(self.valomap_all, guild=guild)
-            self.bot.tree.add_command(self.valomap_pool, guild=guild)
-            self.bot.tree.add_command(self.valomap_select, guild=guild)
-            self.bot.tree.add_command(self.valomap_ban_ui, guild=guild)
-            self.bot.tree.add_command(self.valomap_clear, guild=guild)
-            self.bot.tree.add_command(self.valomap_help, guild=guild)
-            synced = await self.bot.tree.sync(guild=guild)
-            logger.info("VALORANT map commands synced: count=%d", len(synced))
-        except Exception:
-            logger.exception("Failed to sync VALORANT map commands")
-
         if not self.cached_maps:
             await self.get_comp_maps()
 
