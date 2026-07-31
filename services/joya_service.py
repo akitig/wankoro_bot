@@ -8,11 +8,12 @@ import random
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import discord
 
-from storage.json_store import load_json_or_default, save_json_atomic
+from repositories.joya_repository import JoyaRepository
 
 logger = logging.getLogger(__name__)
 
@@ -60,42 +61,6 @@ class _GuildConfig:
     cd_max_sec: int
 
 
-class _JoyaStore:
-    def __init__(self, path: str) -> None:
-        self._path = path
-        self._data: dict[str, Any] = {"guilds": {}, "users": {}}
-        self._load()
-
-    def _load(self) -> None:
-        self._data = load_json_or_default(
-            self._path,
-            {"guilds": {}, "users": {}},
-        )
-
-    def save(self) -> None:
-        save_json_atomic(self._path, self._data)
-
-    def get_guild(self, guild_id: int) -> dict[str, Any]:
-        guilds = self._data.setdefault("guilds", {})
-        return guilds.setdefault(str(guild_id), {})
-
-    def get_user(self, guild_id: int, user_id: int) -> dict[str, Any]:
-        users = self._data.setdefault("users", {})
-        key = f"{guild_id}:{user_id}"
-        return users.setdefault(key, {})
-
-    def reset_guild_all(self, guild_id: int) -> int:
-        guilds = self._data.setdefault("guilds", {})
-        guilds[str(guild_id)] = {}
-        users = self._data.setdefault("users", {})
-        prefix = f"{guild_id}:"
-        keys = [key for key in users if key.startswith(prefix)]
-        for key in keys:
-            del users[key]
-        self.save()
-        return len(keys)
-
-
 class JoyaService:
     """Own Joya state and execute its Discord-facing business workflow."""
 
@@ -117,7 +82,7 @@ class JoyaService:
         self._channel_id = channel_id
         self._block_role_id = 1451758143636901960
         self._view_factory = view_factory
-        self._store = _JoyaStore(data_path)
+        self._repository = JoyaRepository(Path(data_path))
         self._locks: dict[int, asyncio.Lock] = {}
 
     def _lock(self, guild_id: int) -> asyncio.Lock:
@@ -126,7 +91,7 @@ class JoyaService:
         return self._locks[guild_id]
 
     def _get_cfg(self, guild_id: int) -> _GuildConfig:
-        guild_state = self._store.get_guild(guild_id)
+        guild_state = self._repository.get_guild(guild_id)
         minimum = guild_state.get("cd_min_sec")
         maximum = guild_state.get("cd_max_sec")
         if isinstance(minimum, int) and isinstance(maximum, int):
@@ -134,19 +99,19 @@ class JoyaService:
         return _GuildConfig(self._min_env, self._max_env)
 
     def _set_cfg(self, guild_id: int, minimum: int, maximum: int) -> None:
-        guild_state = self._store.get_guild(guild_id)
+        guild_state = self._repository.get_guild(guild_id)
         guild_state["cd_min_sec"] = minimum
         guild_state["cd_max_sec"] = maximum
-        self._store.save()
+        self._repository.save()
 
     def _reset_cfg(self, guild_id: int) -> None:
-        guild_state = self._store.get_guild(guild_id)
+        guild_state = self._repository.get_guild(guild_id)
         guild_state.pop("cd_min_sec", None)
         guild_state.pop("cd_max_sec", None)
-        self._store.save()
+        self._repository.save()
 
     def _get_count_state(self, guild_id: int) -> tuple[int, bool]:
-        guild_state = self._store.get_guild(guild_id)
+        guild_state = self._repository.get_guild(guild_id)
         count = guild_state.get("count", 0)
         finished = guild_state.get("finished", False)
         if not isinstance(count, int):
@@ -162,23 +127,23 @@ class JoyaService:
         finished: bool,
         winner_id: int | None = None,
     ) -> None:
-        guild_state = self._store.get_guild(guild_id)
+        guild_state = self._repository.get_guild(guild_id)
         guild_state["count"] = count
         guild_state["finished"] = finished
         if winner_id is not None:
             guild_state["winner_user_id"] = winner_id
             guild_state["finished_at"] = _now_ts()
-        self._store.save()
+        self._repository.save()
 
     def _cooldown_left(self, guild_id: int, user_id: int) -> int:
-        user_state = self._store.get_user(guild_id, user_id)
+        user_state = self._repository.get_user(guild_id, user_id)
         next_timestamp = user_state.get("next_ts", 0)
         if not isinstance(next_timestamp, int):
             return 0
         return max(0, next_timestamp - _now_ts())
 
     def _set_cooldown(self, guild_id: int, user_id: int, seconds: int) -> None:
-        user_state = self._store.get_user(guild_id, user_id)
+        user_state = self._repository.get_user(guild_id, user_id)
         user_state["next_ts"] = _now_ts() + seconds
 
     @staticmethod
@@ -223,7 +188,7 @@ class JoyaService:
         return embed
 
     async def _disable_panel_if_any(self, guild: discord.Guild) -> None:
-        guild_state = self._store.get_guild(guild.id)
+        guild_state = self._repository.get_guild(guild.id)
         channel_id = guild_state.get("panel_channel_id")
         message_id = guild_state.get("panel_message_id")
         if not isinstance(channel_id, int) or not isinstance(message_id, int):
@@ -265,7 +230,7 @@ class JoyaService:
         async with self._lock(guild_id):
             count, finished = self._get_count_state(guild_id)
             if finished:
-                guild_state = self._store.get_guild(guild_id)
+                guild_state = self._repository.get_guild(guild_id)
                 winner = guild_state.get("winner_user_id")
                 message = "もう108回、鳴り切った。"
                 if isinstance(winner, int):
@@ -299,7 +264,7 @@ class JoyaService:
             config = self._get_cfg(guild_id)
             cooldown = _choose_cooldown(config.cd_min_sec, config.cd_max_sec)
             self._set_cooldown(guild_id, user_id, cooldown)
-            self._store.save()
+            self._repository.save()
 
             count, finished = _advance_count(count)
             if not finished:
@@ -363,10 +328,10 @@ class JoyaService:
                 view=self._view_factory(False),
             )
 
-        guild_state = self._store.get_guild(interaction.guild.id)
+        guild_state = self._repository.get_guild(interaction.guild.id)
         guild_state["panel_channel_id"] = channel.id
         guild_state["panel_message_id"] = message.id
-        self._store.save()
+        self._repository.save()
         await interaction.response.send_message("投稿した。", ephemeral=True)
 
     async def send_status(self, interaction: discord.Interaction) -> None:
@@ -378,7 +343,7 @@ class JoyaService:
         guild_id = interaction.guild.id
         count, finished = self._get_count_state(guild_id)
         config = self._get_cfg(guild_id)
-        guild_state = self._store.get_guild(guild_id)
+        guild_state = self._repository.get_guild(guild_id)
         panel_channel = guild_state.get("panel_channel_id")
         panel_message = guild_state.get("panel_message_id")
         message = (
@@ -438,7 +403,7 @@ class JoyaService:
             return
         guild_id = interaction.guild.id
         async with self._lock(guild_id):
-            removed = self._store.reset_guild_all(guild_id)
+            removed = self._repository.reset_guild_users(guild_id)
         await interaction.response.send_message(
             f"完全リセットした。クールダウン情報 {removed} 件を削除。",
             ephemeral=True,
