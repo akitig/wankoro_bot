@@ -74,12 +74,19 @@ BAN設定は `valomap_bans.json` に永続保存され、Bot再起動後も保�
 > ファイル：`main.py`
 
 Bot全体のエントリーポイント。  
-`.env` の設定を読み込み、以下の3つのCogを起動します。
+`.env` の設定を読み込み、以下の10個のCogを起動します。
 
 ```bash
 cogs/welcome
 cogs/reaction_roles
 cogs/valomap
+cogs/leave_log
+cogs/valocheck
+cogs/valorecruit
+cogs/dm_forward
+cogs/2025_xmas_gacha
+cogs/2026_joya_gacha
+cogs/2026_omikuji_gacha
 ```
 
 起動時には全スラッシュコマンドを自動同期し、  
@@ -173,9 +180,24 @@ EnvironmentFile=/home/akitig/Desktop/Bot/Toureikai/Wankorobot/.env
 |------|------|
 | 言語 | Python 3.10（現在の本番バージョンを維持） |
 | ライブラリ | discord.py v2.x / aiohttp / python-dotenv |
-| データ保存 | JSON・.env |
+| データ保存 | Repository経由のruntime JSON・.env |
 | 実行方式 | systemd 常駐 or CLI実行 |
-| 構造 | Cog構成（`welcome` / `reaction_roles` / `valomap`） |
+| 構造 | 10 Cog / Service層 / Repository層 / storage層 |
+
+---
+
+### 主要ディレクトリ構成
+
+```text
+cogs/          Discord Command・Interaction・View境界
+services/      業務ロジックとDiscord API操作
+repositories/  機能ごとの永続状態と保存API（5 Repository）
+storage/       共通のJSON読込・atomic保存
+tests/         characterization・境界・Repository・構造テスト
+```
+
+依存方向と永続化の設計ルールは
+[`docs/architecture/repositories.md`](docs/architecture/repositories.md)を参照してください。
 
 ---
 
