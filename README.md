@@ -89,10 +89,18 @@ cogs/valomap
 
 ## 📦 セットアップ手順
 
-### 1. 必要パッケージのインストール
+### 1. プロジェクト固有の仮想環境を作成
+
+現在の本番環境と同じPython 3.10系の`python3`を使用します。Python自体の
+バージョンは、このvenv化では変更しません。
+
 ```bash
-pip install -U discord.py aiohttp python-dotenv
+python3 --version
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
 ```
+
+`.venv/`はローカル生成物であり、Git管理対象外です。
 
 ### 2. `.env` を設定
 
@@ -136,32 +144,23 @@ Discord上のロール名・絵文字名・表示内容には影響しません�
 
 ### ローカルで動かす
 ```bash
-python3 main.py
+.venv/bin/python main.py
 ```
 
-### systemd サービスで常駐起動（例）
-`/etc/systemd/system/wankorobot.service` に以下を作成：
+### systemd サービスで常駐起動
+
+現在のUnitの`WorkingDirectory`、`EnvironmentFile`、再起動設定、ログ設定などを
+維持し、`ExecStart`のPythonだけをプロジェクト内の`.venv/bin/python`へ切り替えます。
+本番への移行前後の確認、Unit編集、ロールバックの詳細は
+[`docs/systemd-python-venv.md`](docs/systemd-python-venv.md)を参照してください。
+
+移行後の主要設定は次の形になります。
 
 ```ini
-[Unit]
-Description=Discord Bot - WankoroBot（灯麗会）
-After=network.target
-
 [Service]
-ExecStart=/usr/bin/python3 /home/akitig/Desktop/Bot/Toureikai/Wankorobot/main.py
 WorkingDirectory=/home/akitig/Desktop/Bot/Toureikai/Wankorobot
-Restart=always
-User=akitig
-
-[Install]
-WantedBy=multi-user.target
-```
-
-有効化と起動：
-```bash
-sudo systemctl enable wankorobot
-sudo systemctl start wankorobot
-sudo journalctl -u wankorobot -f
+ExecStart=/home/akitig/Desktop/Bot/Toureikai/Wankorobot/.venv/bin/python /home/akitig/Desktop/Bot/Toureikai/Wankorobot/main.py
+EnvironmentFile=/home/akitig/Desktop/Bot/Toureikai/Wankorobot/.env
 ```
 
 ---
@@ -170,7 +169,7 @@ sudo journalctl -u wankorobot -f
 
 | 項目 | 内容 |
 |------|------|
-| 言語 | Python 3.10+ |
+| 言語 | Python 3.10（現在の本番バージョンを維持） |
 | ライブラリ | discord.py v2.x / aiohttp / python-dotenv |
 | データ保存 | JSON・.env |
 | 実行方式 | systemd 常駐 or CLI実行 |
