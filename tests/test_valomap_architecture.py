@@ -18,15 +18,25 @@ def _imports(path: Path) -> set[str]:
 def test_valomap_dependency_and_state_boundaries() -> None:
     cog_path = ROOT / "cogs" / "valomap.py"
     service_path = ROOT / "services" / "valomap_service.py"
+    repository_path = ROOT / "repositories" / "valomap_repository.py"
     cog_imports = _imports(cog_path)
     service_imports = _imports(service_path)
+    repository_imports = _imports(repository_path)
     cog_source = cog_path.read_text(encoding="utf-8")
 
     assert "cogs" not in service_imports
     assert not any(name.startswith("cogs.") for name in service_imports)
     assert not any(name.startswith("services.") for name in service_imports)
     assert "storage.json_store" not in cog_imports
-    assert "storage.json_store" in service_imports
+    assert "storage.json_store" not in service_imports
+    assert "storage.json_store" in repository_imports
+    assert not {
+        "services",
+        "cogs",
+        "discord",
+        "config",
+        "aiohttp",
+    } & repository_imports
     assert "cached_maps" not in cog_source
     assert "banned_maps" not in cog_source
 
