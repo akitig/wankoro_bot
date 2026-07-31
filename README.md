@@ -177,6 +177,29 @@ EnvironmentFile=/home/akitig/Desktop/Bot/Toureikai/Wankorobot/.env
 
 ---
 
+## ✅ CI
+
+GitHub Actionsは`main`または`develop`へのpushとpull requestで、Python 3.10を使用して
+依存関係、Ruff、全Pythonファイルの構文、`main.py`、全Cogのimportを確認します。
+ダミーのApplication IDとGuild IDだけを使用し、Discord Tokenは要求しません。
+`main.py`は実行しないため、BotがDiscordへ接続することもありません。
+
+ローカルではプロジェクト固有の仮想環境で同じチェックを実行できます。
+
+```bash
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install ruff==0.12.4
+.venv/bin/python -m pip check
+.venv/bin/ruff check .
+.venv/bin/python -m compileall -q .
+env APPLICATION_ID=1 GUILD_ID=1 .venv/bin/python -c 'import main'
+env APPLICATION_ID=1 GUILD_ID=1 .venv/bin/python -c \
+  'import importlib, main; [importlib.import_module(name) for name in main.COGS]'
+```
+
+---
+
 ## 💬 作者・クレジット
 
 **開発者：** あきと（[@akitig](https://akitiger.com)）  
