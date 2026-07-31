@@ -56,7 +56,7 @@ def test_environment_loading_is_confined_to_config() -> None:
         assert "load_dotenv" not in source, path
         assert "os.getenv" not in source, path
         assert "os.environ" not in source, path
-=======
+
 """Static dependency rules for application configuration."""
 
 from __future__ import annotations
