@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -10,6 +11,8 @@ from pathlib import Path
 from types import MappingProxyType
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 PRODUCTION_DATA_DIR = Path("/home/akitig/Desktop/Bot/Toureikai/Wankorobot/data")
 
@@ -72,6 +75,7 @@ class Config:
     discord_token: str | None = field(repr=False)
     application_id: int
     guild_id: int
+    log_level: str
 
     admin_id: int | None
     manager_role_ids: frozenset[int]
@@ -133,6 +137,7 @@ def _load_config() -> Config:
         discord_token=os.getenv("DISCORD_TOKEN"),
         application_id=_required_int("APPLICATION_ID"),
         guild_id=_required_int("GUILD_ID"),
+        log_level=_string_with_default("LOG_LEVEL", "INFO", strip=True),
         admin_id=_optional_int("ADMIN_ID"),
         manager_role_ids=_id_set("MANAGER_ROLE_IDS"),
         welcome_role_a=_optional_int("ROLE_A"),

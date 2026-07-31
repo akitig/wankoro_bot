@@ -1,3 +1,4 @@
+import logging
 import random
 import discord
 from discord.ext import commands
@@ -5,6 +6,8 @@ from discord.ui import View, Button
 from discord import app_commands
 
 from config import get_config
+
+logger = logging.getLogger(__name__)
 
 class Welcome(commands.Cog):
     def __init__(self, bot):
@@ -187,7 +190,7 @@ class Welcome(commands.Cog):
         guild = self.bot.get_guild(self.GUILD_ID)
 
         if member.id in self.processing_users:
-            print(f"⚠️ Skipped duplicate welcome for {member}")
+            logger.warning("Skipped duplicate welcome workflow")
             return None
         self.processing_users.add(member.id)
 
@@ -237,18 +240,21 @@ class Welcome(commands.Cog):
                 await ch.send(embed=self.welcome_embed())
                 await ch.send("🧩 **Q1. 25歳以上ですか？**", view=self.Question1(self, member))
             except discord.Forbidden:
-                print(f"❌ Bot cannot send messages to {ch.name}. Check channel permissions!")
+                logger.exception("Bot cannot send messages to a welcome channel")
                 perms = ch.permissions_for(guild.me)
-                print("  view_channel:", perms.view_channel)
-                print("  send_messages:", perms.send_messages)
-                print("  embed_links:", perms.embed_links)
-                print("  manage_messages:", perms.manage_messages)
+                logger.debug(
+                    "Welcome channel permissions: view=%s send=%s embed=%s manage=%s",
+                    perms.view_channel,
+                    perms.send_messages,
+                    perms.embed_links,
+                    perms.manage_messages,
+                )
                 return None
 
             return ch
 
-        except discord.Forbidden as e:
-            print(f"❌ Missing permission when creating channel for {member}: {e}")
+        except discord.Forbidden:
+            logger.exception("Missing permission while creating a welcome channel")
             return None
 
         finally:
@@ -260,7 +266,7 @@ class Welcome(commands.Cog):
     @commands.Cog.listener()
     async def on_member_join(self, member):
         if member.id in self.processing_users:
-            print(f"⚠️ Skipped auto-create for {member} (manual welcome running)")
+            logger.warning("Skipped automatic welcome while manual workflow is active")
             return
         await self.create_welcome_room(member)
 
@@ -313,9 +319,9 @@ class Welcome(commands.Cog):
             self.bot.tree.add_command(self.welcome_slash, guild=guild)
             self.bot.tree.add_command(self.ok_slash, guild=guild)
             synced = await self.bot.tree.sync(guild=guild)
-            print(f"✅ Slash commands synced to guild {self.GUILD_ID}: {[cmd.name for cmd in synced]}")
-        except Exception as e:
-            print(f"⚠️ Failed to sync slash commands: {e}")
+            logger.info("Welcome commands synced: count=%d", len(synced))
+        except Exception:
+            logger.exception("Failed to sync welcome commands")
 
 
 async def setup(bot):

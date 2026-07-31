@@ -1,7 +1,11 @@
+import logging
+
 import discord
 from discord.ext import commands
 
 from config import get_config
+
+logger = logging.getLogger(__name__)
 
 
 class DmForwardCog(commands.Cog):
@@ -24,6 +28,7 @@ class DmForwardCog(commands.Cog):
             try:
                 target = await self.bot.fetch_user(self.forward_user_id)
             except Exception:
+                logger.exception("Failed to resolve the configured DM forwarding target")
                 return
 
         # 転送本文
@@ -40,6 +45,7 @@ class DmForwardCog(commands.Cog):
             else:
                 await target.send(header + "（本文なし）")
         except Exception:
+            logger.exception("Failed to forward a DM message")
             return
 
         # 添付ファイルも転送（URLだけでもOKならこれで十分）
@@ -47,7 +53,7 @@ class DmForwardCog(commands.Cog):
             try:
                 await target.send(f"📎 添付: {a.url}")
             except Exception:
-                pass
+                logger.exception("Failed to forward a DM attachment")
 
 
 async def setup(bot: commands.Bot):

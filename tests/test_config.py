@@ -41,6 +41,7 @@ def test_config_is_typed_and_cached(monkeypatch) -> None:
     monkeypatch.setenv("MANAGER_ROLE_IDS", "1,invalid,2")
     monkeypatch.setenv("VALO_CHECK_DATA_PATH", "runtime/completed.json")
     monkeypatch.setenv("RR_GAME_VALO", "10:20")
+    monkeypatch.delenv("LOG_LEVEL", raising=False)
 
     config = get_config()
 
@@ -50,4 +51,5 @@ def test_config_is_typed_and_cached(monkeypatch) -> None:
     assert config.manager_role_ids == frozenset({1, 2})
     assert config.valo_check_data_path == Path("runtime/completed.json")
     assert config.reaction_role_values["RR_GAME_VALO"] == "10:20"
+    assert config.log_level == "INFO"
     assert "private-token" not in repr(config)

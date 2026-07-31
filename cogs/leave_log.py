@@ -1,8 +1,12 @@
+import logging
+
 import discord
 from discord.ext import commands
 import asyncio
 
 from config import get_config
+
+logger = logging.getLogger(__name__)
 
 class LeaveLog(commands.Cog):
     def __init__(self, bot):
@@ -23,7 +27,7 @@ class LeaveLog(commands.Cog):
         guild = member.guild
         channel = guild.get_channel(self.LEAVE_LOG_CHANNEL_ID)
         if not channel:
-            print("⚠️ 退出ログチャンネルが見つかりません。")
+            logger.warning("Leave log channel is unavailable")
             return
 
         # Kick/Ban情報を待つ（AuditLog反映遅延対策）
@@ -63,7 +67,7 @@ class LeaveLog(commands.Cog):
         embed.set_thumbnail(url=member.display_avatar.url if member.display_avatar else None)
 
         await channel.send(embed=embed)
-        print(f"📕 退出ログ送信 ({event_type}): {member.name}")
+        logger.info("Leave notification sent: event_type=%s", event_type)
 
     # ======================================================
     # ✅ BAN検知イベント
@@ -74,9 +78,10 @@ class LeaveLog(commands.Cog):
             entry = await guild.fetch_ban(user)
             reason = entry.reason if entry.reason else "理由なし"
         except Exception:
+            logger.exception("Failed to fetch ban details")
             reason = "理由なし"
         self.recent_bans[user.id] = reason
-        print(f"🕊️ BAN検知: {user} - {reason}")
+        logger.info("Member ban event recorded")
 
     # ======================================================
     # ✅ KICK検知イベント（AuditLog）
@@ -87,14 +92,14 @@ class LeaveLog(commands.Cog):
             target = entry.target
             if isinstance(target, discord.User):
                 self.recent_kicks[target.id] = entry.reason or "理由なし"
-                print(f"🦶 Kick検知: {target} - {entry.reason}")
+                logger.info("Member kick event recorded")
 
     # ======================================================
     # ✅ 起動時ログ
     # ======================================================
     @commands.Cog.listener()
     async def on_ready(self):
-        print("✅ LeaveLog cog loaded (kick/ban detection active).")
+        logger.info("Leave-log event handlers ready")
 
 
 async def setup(bot):

@@ -1,5 +1,6 @@
 import asyncio
 import csv
+import logging
 import random
 from dataclasses import dataclass
 from datetime import datetime
@@ -11,6 +12,8 @@ from discord.ext import commands
 
 from config import get_config
 from storage.json_store import load_json_or_default, save_json_atomic
+
+logger = logging.getLogger(__name__)
 
 try:
     from zoneinfo import ZoneInfo
@@ -224,6 +227,7 @@ async def _try_set_nick(member: discord.Member, nick: Optional[str]) -> bool:
         await member.edit(nick=nick, reason="Xmas gacha nickname")
         return True
     except (discord.Forbidden, discord.HTTPException):
+        logger.exception("Failed to update an Xmas nickname")
         return False
 
 
@@ -410,14 +414,17 @@ class t_xmas_gacha(commands.Cog):
                 await ch.fetch_message(msg_id)
                 return
             except discord.NotFound:
-                pass
+                logger.warning("Stored Xmas panel message was not found")
             except discord.Forbidden:
+                logger.exception("Missing permission to fetch the Xmas panel")
                 return
             except discord.HTTPException:
+                logger.exception("Discord API failed while fetching the Xmas panel")
                 return
         try:
             msg = await ch.send(embed=_panel_embed(), view=t_xmas_gacha_view())
         except (discord.Forbidden, discord.HTTPException):
+            logger.exception("Failed to create the Xmas panel")
             return
         data["panel_message_id"] = msg.id
         _state_write(data)
@@ -469,7 +476,7 @@ class t_xmas_gacha(commands.Cog):
             try:
                 await interaction.guild.chunk()
             except Exception:
-                pass
+                logger.exception("Failed to refresh members for Xmas nickname restore")
 
         salvage_members: List[discord.Member] = []
         for m in interaction.guild.members:

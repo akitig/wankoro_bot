@@ -17,7 +17,7 @@ from being attempted.
 
 | Area | Environment variables |
 |---|---|
-| Discord process | `DISCORD_TOKEN`, `APPLICATION_ID`, `GUILD_ID` |
+| Discord process | `DISCORD_TOKEN`, `APPLICATION_ID`, `GUILD_ID`, `LOG_LEVEL` |
 | Welcome and moderation | `ADMIN_ID`, `MANAGER_ROLE_IDS`, `ROLE_A`, `ROLE_B`, `ROLE_C`, `LEAVE_LOG_CHANNEL_ID`, `DM_FORWARD_USER_ID` |
 | Reaction Roles | `REACTION_ROLE_MESSAGE_IDS`, every `RR_*` mapping |
 | VALORANT check | `ROLE_ENJOY_ID`, `ROLE_GACHI_ID`, `VALO_ROLE_LOG_CHANNEL_ID`, `VALO_CHECK_VIEW_TIMEOUT_SEC`, `VALO_CHECK_DATA_PATH`, `VALO_CHECK_QUESTIONS_PATH`, `VALO_CHECK_INTRO_PATH`, `VALO_CHECK_THRESH_ENJOY_ONLY`, `VALO_CHECK_THRESH_GACHI_ONLY`, `VALO_CHECK_LABEL_ENJOY`, `VALO_CHECK_LABEL_GACHI`, `VALO_CHECK_LABEL_BOTH` |
@@ -47,3 +47,15 @@ All JSON and CSV paths exposed through Config use `pathlib.Path`.
 The current `JOYA_DATA_PATH` default does not match the tracked
 `data/2026_joya_state.json` filename. That pre-existing deployment distinction
 is documented rather than changed in this refactor.
+
+## Logging
+
+`LOG_LEVEL` controls the process-wide minimum level and defaults to `INFO`.
+Accepted standard names include `DEBUG`, `INFO`, `WARNING`, `ERROR`, and
+`CRITICAL`. An empty or invalid value safely falls back to `INFO`.
+
+`logging_config.py` configures logging once during application startup. Records
+through `INFO` go to stdout, while `WARNING` and above go to stderr. This keeps
+the existing systemd `StandardOutput`/`StandardError` destinations usable
+without changing the Unit. The Discord token is registered as a secret and
+redacted if it is accidentally included in a log message.

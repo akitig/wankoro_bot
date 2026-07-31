@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import random
 import time
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from discord.ext import commands
 
 from config import get_config
 from storage.json_store import load_json_or_default, save_json_atomic
+
+logger = logging.getLogger(__name__)
 
 
 def _now_ts() -> int:
@@ -255,6 +258,7 @@ class JoyaGacha(commands.Cog):
         try:
             msg = await ch.fetch_message(msg_id)
         except Exception:
+            logger.exception("Failed to fetch the Joya panel message")
             return
         try:
             await msg.edit(
@@ -262,6 +266,7 @@ class JoyaGacha(commands.Cog):
                 view=JoyaView(disabled=True),
             )
         except Exception:
+            logger.exception("Failed to disable the Joya panel")
             return
 
     def _has_block_role(self, member: discord.Member) -> bool:
@@ -347,6 +352,7 @@ class JoyaGacha(commands.Cog):
             try:
                 await member.add_roles(role, reason="Joya 108th winner")
             except discord.Forbidden:
+                logger.exception("Failed to assign the Joya winner role")
                 await interaction.followup.send(
                     embed=self._final_embed(member),
                     content=(
