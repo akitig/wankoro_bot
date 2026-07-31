@@ -6,11 +6,11 @@ import logging
 import random
 from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import discord
 
-from config import Config
 from repositories.valocheck_repository import ValocheckRepository
 
 logger = logging.getLogger(__name__)
@@ -90,33 +90,42 @@ class ValocheckService:
     def __init__(
         self,
         bot: Any,
-        config: Config,
         *,
+        guild_id: int,
+        role_enjoy_id: int,
+        role_gachi_id: int,
+        log_channel_id: int | None,
+        admin_dm_user_id: int | None,
+        view_timeout_sec: int,
+        thresh_enjoy_only: int,
+        thresh_gachi_only: int,
+        label_enjoy: str,
+        label_gachi: str,
+        label_both: str,
+        completion_path: Path,
+        questions_path: Path,
+        intro_path: Path,
         start_view_factory: Callable[[int, int], Any],
         quiz_view_factory: Callable[[int, int], Any],
     ) -> None:
         self.bot = bot
-        self.guild_id = config.guild_id
-        self.role_enjoy_id = config.require_id(
-            config.valo_role_enjoy_id, "ROLE_ENJOY_ID"
-        )
-        self.role_gachi_id = config.require_id(
-            config.valo_role_gachi_id, "ROLE_GACHI_ID"
-        )
-        self.log_channel_id = config.valo_role_log_channel_id
-        self.admin_dm_user_id = config.dm_forward_user_id
-        self.view_timeout_sec = config.valo_check_view_timeout_sec
-        self.thresh_enjoy_only = config.valo_check_thresh_enjoy_only
-        self.thresh_gachi_only = config.valo_check_thresh_gachi_only
-        self.label_enjoy = config.valo_check_label_enjoy
-        self.label_gachi = config.valo_check_label_gachi
-        self.label_both = config.valo_check_label_both
+        self.guild_id = guild_id
+        self.role_enjoy_id = role_enjoy_id
+        self.role_gachi_id = role_gachi_id
+        self.log_channel_id = log_channel_id
+        self.admin_dm_user_id = admin_dm_user_id
+        self.view_timeout_sec = view_timeout_sec
+        self.thresh_enjoy_only = thresh_enjoy_only
+        self.thresh_gachi_only = thresh_gachi_only
+        self.label_enjoy = label_enjoy
+        self.label_gachi = label_gachi
+        self.label_both = label_both
         self._start_view_factory = start_view_factory
         self._quiz_view_factory = quiz_view_factory
         self._repository = ValocheckRepository(
-            completion_path=config.valo_check_data_path,
-            questions_path=config.valo_check_questions_path,
-            intro_path=config.valo_check_intro_path,
+            completion_path=completion_path,
+            questions_path=questions_path,
+            intro_path=intro_path,
         )
 
         intro = _normalize_intro(self._repository.load_intro())
