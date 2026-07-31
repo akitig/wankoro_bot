@@ -85,7 +85,7 @@ def test_missing_forward_target_is_logged_without_message_body(
             )
         )
 
-    assert "Failed to resolve DM forwarding target" in caplog.text
+    assert "Failed to resolve the configured DM forwarding target" in caplog.text
     assert body not in caplog.text
 
 
@@ -112,6 +112,6 @@ def test_send_failure_is_logged_without_author_or_body(
             )
         )
 
-    assert "Failed to forward direct message" in caplog.text
+    assert "Failed to forward a DM message" in caplog.text
     assert author.name not in caplog.text
     assert body not in caplog.text
