@@ -240,16 +240,16 @@ class Welcome(commands.Cog):
                 await ch.send(embed=self.welcome_embed())
                 await ch.send("🧩 **Q1. 25歳以上ですか？**", view=self.Question1(self, member))
             except discord.Forbidden:
-                logger.exception("Bot cannot send messages to a welcome channel")
-                perms = ch.permissions_for(guild.me)
-                logger.debug(
-                    "Welcome channel permissions: view=%s send=%s embed=%s manage=%s",
-                    perms.view_channel,
-                    perms.send_messages,
-                    perms.embed_links,
-                    perms.manage_messages,
-                )
-                return None
+                            logger.exception("Bot cannot send messages to a welcome channel")
+                            perms = ch.permissions_for(guild.me)
+                            logger.debug(
+                                "Welcome channel permissions: view=%s send=%s embed=%s manage=%s",
+                                perms.view_channel,
+                                perms.send_messages,
+                                perms.embed_links,
+                                perms.manage_messages,
+                            )
+                            return None
 
             return ch
 

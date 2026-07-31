@@ -81,12 +81,16 @@ class ReactionRoles(commands.Cog):
         if not role:
             return
 
-        if add:
-            await member.add_roles(role)
-            logger.info("Reaction Role assigned")
-        else:
-            await member.remove_roles(role)
-            logger.info("Reaction Role removed")
+        try:
+            if add:
+                await member.add_roles(role)
+                logger.info("Reaction Role assigned")
+            else:
+                await member.remove_roles(role)
+                logger.info("Reaction Role removed")
+        except Exception:
+            logger.exception("Reaction Role operation failed")
+            raise
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
