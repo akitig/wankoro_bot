@@ -2,22 +2,22 @@ from pathlib import Path
 
 import pytest
 
-from cogs.valocheck import (
+from services.valocheck_service import (
     DEFAULT_QUESTIONS,
-    ValoCheckCog,
+    ValocheckService,
     _calc_max_score,
     _normalize_questions,
 )
 
 
-def _role_cog() -> ValoCheckCog:
-    cog = ValoCheckCog.__new__(ValoCheckCog)
-    cog.thresh_enjoy_only = 6
-    cog.thresh_gachi_only = 12
-    cog.label_enjoy = "ENJOY設定"
-    cog.label_gachi = "GACHI設定"
-    cog.label_both = "両方設定"
-    return cog
+def _role_service() -> ValocheckService:
+    service = ValocheckService.__new__(ValocheckService)
+    service.thresh_enjoy_only = 6
+    service.thresh_gachi_only = 12
+    service.label_enjoy = "ENJOY設定"
+    service.label_gachi = "GACHI設定"
+    service.label_both = "両方設定"
+    return service
 
 
 @pytest.mark.parametrize(
@@ -34,14 +34,14 @@ def _role_cog() -> ValoCheckCog:
 def test_role_decision_boundaries_and_labels(
     score: int, expected: tuple[bool, bool, str]
 ) -> None:
-    assert _role_cog()._calc_roles(score) == expected
+    assert _role_service().calculate_roles(score) == expected
 
 
 def test_every_score_range_assigns_at_least_one_role() -> None:
-    cog = _role_cog()
+    service = _role_service()
 
     for score in range(-10, 31):
-        is_gachi, is_enjoy, _ = cog._calc_roles(score)
+        is_gachi, is_enjoy, _ = service.calculate_roles(score)
         assert is_gachi or is_enjoy
 
 
@@ -61,11 +61,11 @@ def test_question_scores_are_normalized_and_maximum_is_calculated() -> None:
 
 
 def test_missing_question_file_uses_built_in_default(tmp_path: Path) -> None:
-    cog = ValoCheckCog.__new__(ValoCheckCog)
-    cog.questions_path = tmp_path / "missing-questions.json"
-    cog.questions = []
-    cog.max_score = 0
+    service = ValocheckService.__new__(ValocheckService)
+    service.questions_path = tmp_path / "missing-questions.json"
+    service.questions = []
+    service.max_score = 0
 
-    assert cog._reload_questions(use_default=True) is True
-    assert cog.questions is DEFAULT_QUESTIONS
-    assert cog.max_score == _calc_max_score(DEFAULT_QUESTIONS)
+    assert service.reload_questions(use_default=True) is True
+    assert service.questions is DEFAULT_QUESTIONS
+    assert service.max_score == _calc_max_score(DEFAULT_QUESTIONS)
