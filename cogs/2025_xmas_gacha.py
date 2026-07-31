@@ -1,6 +1,5 @@
 import asyncio
 import csv
-import os
 import random
 from dataclasses import dataclass
 from datetime import datetime
@@ -10,6 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from config import get_config
 from storage.json_store import load_json_or_default, save_json_atomic
 
 try:
@@ -20,34 +20,11 @@ except ImportError:
 STATE_NONE = "__NONE__"
 
 
-def _get_env_str(key: str, default: str) -> str:
-    v = os.getenv(key)
-    if v is None or v.strip() == "":
-        return default
-    return v.strip()
-
-
-def _get_env_int(key: str, default: int) -> int:
-    v = os.getenv(key)
-    if v is None:
-        return default
-    try:
-        return int(v.strip())
-    except ValueError:
-        return default
-
-
-DATA_DIR = "/home/akitig/Desktop/Bot/Toureikai/Wankorobot/data"
-CSV_PATH = _get_env_str(
-    "XMAS_GACHA_CSV",
-    os.path.join(DATA_DIR, "2025_xmas_gacha.csv"),
-)
-STATE_PATH = _get_env_str(
-    "XMAS_GACHA_STATE",
-    os.path.join(DATA_DIR, "xmas_gacha_state.json"),
-)
-CHANNEL_ID = _get_env_int("XMAS_GACHA_CHANNEL_ID", 0)
-CUTOFF_RAW = _get_env_str("XMAS_GACHA_CUTOFF", "2025-12-26T07:00:00+09:00")
+config = get_config()
+CSV_PATH = config.xmas_gacha_csv_path
+STATE_PATH = config.xmas_gacha_state_path
+CHANNEL_ID = config.xmas_gacha_channel_id
+CUTOFF_RAW = config.xmas_gacha_cutoff
 
 CLOSED_MESSAGES_MAIN = [
     "まだクリスマスの気分かい？\n街はもう、いつもの顔に戻ってる。",
@@ -144,7 +121,7 @@ def _panel_embed() -> discord.Embed:
 
 
 def _read_csv_rewards() -> List[t_reward]:
-    if not os.path.exists(CSV_PATH):
+    if not CSV_PATH.exists():
         return []
     rewards: List[t_reward] = []
     with open(CSV_PATH, "r", encoding="utf-8", newline="") as f:

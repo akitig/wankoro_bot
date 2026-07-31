@@ -1,12 +1,17 @@
 import discord
 from discord.ext import commands
 import asyncio
-import os
+
+from config import get_config
 
 class LeaveLog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.LEAVE_LOG_CHANNEL_ID = int(os.getenv("LEAVE_LOG_CHANNEL_ID"))
+        config = get_config()
+        self.LEAVE_LOG_CHANNEL_ID = config.require_id(
+            config.leave_log_channel_id,
+            "LEAVE_LOG_CHANNEL_ID",
+        )
         self.recent_bans = {}
         self.recent_kicks = {}
 

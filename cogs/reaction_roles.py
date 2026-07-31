@@ -1,9 +1,9 @@
-import os
 import re
 import discord
 from discord.ext import commands
 from discord import app_commands
 
+from config import get_config
 
 ENV_KEY_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
@@ -21,13 +21,12 @@ GAME_REACTION_ROLES = {
 class ReactionRoles(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.GUILD_ID = int(os.getenv("GUILD_ID"))
+        config = get_config()
+        self.GUILD_ID = config.guild_id
 
         # カンマ区切りで複数のメッセージに対応
-        raw_ids = os.getenv("REACTION_ROLE_MESSAGE_IDS", "")
-        self.REACTION_ROLE_MESSAGE_IDS = {
-            int(x) for x in raw_ids.split(",") if x.strip().isdigit()
-        }
+        self.REACTION_ROLE_MESSAGE_IDS = set(config.reaction_role_message_ids)
+        self._reaction_role_values = config.reaction_role_values
 
         self.reaction_role_map = {}
         self.load_reaction_roles()
@@ -37,7 +36,7 @@ class ReactionRoles(commands.Cog):
     # ======================================================
     def load_reaction_roles(self):
         self.reaction_role_map.clear()
-        for key, value in os.environ.items():
+        for key, value in self._reaction_role_values.items():
             if key.startswith("RR_"):
                 try:
                     emoji_id, role_id = value.split(":")

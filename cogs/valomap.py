@@ -1,4 +1,3 @@
-import os
 import random
 
 import aiohttp
@@ -6,15 +5,16 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from config import get_config
 from storage.json_store import load_json_or_default, save_json_atomic
 
 VALO_API_URL = "https://valorant-api.com/v1/maps"
-BAN_FILE = "valomap_bans.json"
 
 
 class ValorantMap(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.config = get_config()
         self.cached_maps = []
         self.banned_maps = set()
         self.load_bans()
@@ -23,13 +23,16 @@ class ValorantMap(commands.Cog):
     # 🔹 BANファイルの読み書き
     # -------------------------------
     def load_bans(self):
-        data = load_json_or_default(BAN_FILE, {"bans": []})
+        data = load_json_or_default(self.config.valomap_bans_path, {"bans": []})
         self.banned_maps = set(data.get("bans", []))
         print(f"🚫 Loaded banned maps: {self.banned_maps}")
 
     def save_bans(self):
         try:
-            save_json_atomic(BAN_FILE, {"bans": list(self.banned_maps)})
+            save_json_atomic(
+                self.config.valomap_bans_path,
+                {"bans": list(self.banned_maps)},
+            )
             print(f"💾 Saved banned maps: {self.banned_maps}")
         except (OSError, TypeError, ValueError):
             print("⚠️ Failed to save ban file.")
@@ -212,7 +215,7 @@ class ValorantMap(commands.Cog):
     # -------------------------------
     @commands.Cog.listener()
     async def on_ready(self):
-        guild = discord.Object(id=int(os.getenv("GUILD_ID")))
+        guild = discord.Object(id=self.config.guild_id)
         try:
             self.bot.tree.add_command(self.valomap_all, guild=guild)
             self.bot.tree.add_command(self.valomap_pool, guild=guild)
