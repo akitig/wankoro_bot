@@ -261,14 +261,68 @@ def test_save_failure_logs_existing_message_without_runtime_json(
 ) -> None:
     secret = "private-map-name"
     service = _service(tmp_path)
-    service._banned_maps.add(secret)
+    service._repository.add_ban(secret)
 
-    def fail_save(_path, _data):
+    def fail_save():
         raise OSError("disk failed")
 
-    monkeypatch.setattr(valomap, "save_json_atomic", fail_save)
+    monkeypatch.setattr(service._repository, "save", fail_save)
     with caplog.at_level(logging.ERROR, logger=valomap.__name__):
         service.save_bans()
 
     assert "Failed to save VALORANT map bans" in caplog.text
     assert secret not in caplog.text
+
+
+def test_service_delegates_ban_state_and_preserves_save_attempts(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+
+    class RepositoryStub:
+        def __init__(self) -> None:
+            self.bans = {"Bind"}
+            self.calls = []
+
+        def get_bans(self):
+            self.calls.append(("get",))
+            return set(self.bans)
+
+        def add_ban(self, name):
+            self.calls.append(("add", name))
+            self.bans.add(name)
+            return True
+
+        def remove_ban(self, name):
+            self.calls.append(("remove", name))
+            self.bans.discard(name)
+            return True
+
+        def clear_bans(self):
+            self.calls.append(("clear",))
+            self.bans.clear()
+            return True
+
+        def save(self):
+            self.calls.append(("save",))
+
+    repository = RepositoryStub()
+    service._repository = repository
+
+    assert service.is_banned("Bind") is True
+    service.ban_map("Ascent")
+    service.unban_map("Missing")
+    service.clear_bans()
+
+    assert repository.calls == [
+        ("get",),
+        ("add", "Ascent"),
+        ("save",),
+        ("get",),
+        ("remove", "Missing"),
+        ("save",),
+        ("get",),
+        ("clear",),
+        ("save",),
+        ("get",),
+    ]

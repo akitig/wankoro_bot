@@ -10,7 +10,7 @@ from typing import Any
 
 import aiohttp
 
-from storage.json_store import load_json_or_default, save_json_atomic
+from repositories.valomap_repository import ValomapRepository
 
 logger = logging.getLogger(__name__)
 
@@ -33,25 +33,24 @@ class ValomapService:
         bans_path: Path,
         fetch_maps: FetchMaps | None = None,
     ) -> None:
-        self._bans_path = bans_path
         self._fetch_maps = fetch_maps or self._fetch_maps_from_api
         self._cached_maps: list[MapData] = []
-        self._banned_maps: set[str] = set()
+        self._repository = ValomapRepository(bans_path)
         self.load_bans()
 
     def load_bans(self) -> None:
-        data = load_json_or_default(self._bans_path, {"bans": []})
-        self._banned_maps = set(data.get("bans", []))
-        logger.info("VALORANT map bans loaded: count=%d", len(self._banned_maps))
+        self._repository.load()
+        logger.info(
+            "VALORANT map bans loaded: count=%d",
+            len(self._repository.get_bans()),
+        )
 
     def save_bans(self) -> None:
         try:
-            save_json_atomic(
-                self._bans_path,
-                {"bans": list(self._banned_maps)},
-            )
+            self._repository.save()
             logger.info(
-                "VALORANT map bans saved: count=%d", len(self._banned_maps)
+                "VALORANT map bans saved: count=%d",
+                len(self._repository.get_bans()),
             )
         except (OSError, TypeError, ValueError):
             logger.exception("Failed to save VALORANT map bans")
@@ -91,18 +90,18 @@ class ValomapService:
             await self.get_comp_maps()
 
     def is_banned(self, map_name: str) -> bool:
-        return map_name in self._banned_maps
+        return map_name in self._repository.get_bans()
 
     def ban_map(self, map_name: str) -> None:
-        self._banned_maps.add(map_name)
+        self._repository.add_ban(map_name)
         self.save_bans()
 
     def unban_map(self, map_name: str) -> None:
-        self._banned_maps.discard(map_name)
+        self._repository.remove_ban(map_name)
         self.save_bans()
 
     def clear_bans(self) -> None:
-        self._banned_maps.clear()
+        self._repository.clear_bans()
         self.save_bans()
 
     async def get_map_listing(self) -> list[tuple[str, bool]]:
