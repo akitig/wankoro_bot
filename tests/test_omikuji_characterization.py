@@ -52,9 +52,10 @@ def test_load_filters_non_numeric_user_keys(tmp_path: Path) -> None:
     )
 
     asyncio.run(service.load())
+    asyncio.run(service.save())
 
     assert asyncio.run(service.get_points(123)) == 20
-    assert service._points == {"123": 20}
+    assert json.loads(path.read_text(encoding="utf-8")) == {"123": 20}
 
 
 def test_omikuji_weight_table_and_random_choice_are_fixed(

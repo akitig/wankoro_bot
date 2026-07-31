@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+from pathlib import Path
 from typing import Any
 
 import discord
 
-from storage.json_store import load_json_or_default, save_json_atomic
+from repositories.omikuji_repository import OmikujiRepository
 
 logger = logging.getLogger(__name__)
 
@@ -27,55 +28,29 @@ class OmikujiService:
         panel_channel_id: int,
     ) -> None:
         self.bot = bot
-        self._points_path = points_path
         self._rest_vc_id = rest_vc_id
         self._resetter_user_id = resetter_user_id
         self._panel_channel_id = panel_channel_id
-        self._lock = asyncio.Lock()
-        self._points: dict[str, int] = {}
+        self._repository = OmikujiRepository(Path(points_path))
         self._task: asyncio.Task[None] | None = None
 
     async def load(self) -> None:
-        async with self._lock:
-            data = load_json_or_default(self._points_path, {})
-            if isinstance(data, dict):
-                self._points = {
-                    str(key): int(value)
-                    for key, value in data.items()
-                    if str(key).isdigit()
-                }
-            else:
-                self._points = {}
+        await self._repository.load()
 
     async def save(self) -> None:
-        async with self._lock:
-            save_json_atomic(self._points_path, self._points)
+        await self._repository.save()
 
     async def get_points(self, user_id: int) -> int:
-        async with self._lock:
-            return int(self._points.get(str(user_id), 0))
+        return await self._repository.get_points(user_id)
 
     async def ensure_initial_points(self, user_id: int, initial: int) -> None:
-        async with self._lock:
-            key = str(user_id)
-            if key not in self._points:
-                self._points[key] = int(initial)
+        await self._repository.ensure_initial(user_id, initial)
 
     async def add_points(self, user_id: int, delta: int) -> int:
-        async with self._lock:
-            key = str(user_id)
-            points = int(self._points.get(key, 0)) + int(delta)
-            if points < 0:
-                points = 0
-            self._points[key] = points
-            return points
+        return await self._repository.add_points(user_id, delta)
 
     async def reset_all_points(self, initial: int) -> int:
-        async with self._lock:
-            keys = list(self._points)
-            for key in keys:
-                self._points[key] = int(initial)
-            return len(keys)
+        return await self._repository.reset_all(initial)
 
     @staticmethod
     def _draw_omikuji() -> str:
@@ -153,7 +128,7 @@ class OmikujiService:
                 ephemeral=True,
             )
             return
-        remaining = await self.add_points(interaction.user.id, -50)
+        remaining = await self._repository.consume_points(interaction.user.id, 50)
         result = self._draw_omikuji()
         await self.save()
 

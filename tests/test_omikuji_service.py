@@ -17,6 +17,37 @@ class FakeResponse:
         self.sent.append((args, kwargs))
 
 
+class RepositoryStub:
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    async def load(self) -> None:
+        self.calls.append(("load",))
+
+    async def save(self) -> None:
+        self.calls.append(("save",))
+
+    async def get_points(self, user_id: int) -> int:
+        self.calls.append(("get", user_id))
+        return 321
+
+    async def ensure_initial(self, user_id: int, initial: int) -> int:
+        self.calls.append(("ensure", user_id, initial))
+        return initial
+
+    async def add_points(self, user_id: int, delta: int) -> int:
+        self.calls.append(("add", user_id, delta))
+        return 322
+
+    async def consume_points(self, user_id: int, amount: int) -> int:
+        self.calls.append(("consume", user_id, amount))
+        return 271
+
+    async def reset_all(self, initial: int) -> int:
+        self.calls.append(("reset", initial))
+        return 2
+
+
 def _service(tmp_path: Path, *, bot=None, resetter_user_id: int = 99) -> OmikujiService:
     return OmikujiService(
         bot if bot is not None else SimpleNamespace(guilds=[]),
@@ -25,6 +56,65 @@ def _service(tmp_path: Path, *, bot=None, resetter_user_id: int = 99) -> Omikuji
         resetter_user_id=resetter_user_id,
         panel_channel_id=0,
     )
+
+
+def test_service_delegates_point_state_to_repository(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    repository = RepositoryStub()
+    service._repository = repository
+
+    async def scenario() -> None:
+        await service.load()
+        assert await service.get_points(1) == 321
+        await service.ensure_initial_points(1, 500)
+        assert await service.add_points(1, 1) == 322
+        assert await service.reset_all_points(500) == 2
+        await service.save()
+
+    asyncio.run(scenario())
+
+    assert repository.calls == [
+        ("load",),
+        ("get", 1),
+        ("ensure", 1, 500),
+        ("add", 1, 1),
+        ("reset", 500),
+        ("save",),
+    ]
+
+
+def test_draw_delegates_consumption_and_save_to_repository(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service(tmp_path)
+    repository = RepositoryStub()
+    service._repository = repository
+    response = FakeResponse()
+    interaction = SimpleNamespace(user=SimpleNamespace(id=1), response=response)
+    monkeypatch.setattr(service_module.random, "choice", lambda _pool: "大吉")
+
+    asyncio.run(service.handle_draw(interaction))
+
+    assert repository.calls == [
+        ("ensure", 1, 500),
+        ("get", 1),
+        ("consume", 1, 50),
+        ("save",),
+    ]
+
+
+def test_repository_load_exception_propagates_from_service(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+
+    class FailingRepository(RepositoryStub):
+        async def load(self) -> None:
+            raise RuntimeError("load failed")
+
+    service._repository = FailingRepository()
+
+    with pytest.raises(RuntimeError, match="load failed"):
+        asyncio.run(service.load())
 
 
 def test_initial_add_subtract_floor_reset_and_json_save(tmp_path: Path) -> None:
