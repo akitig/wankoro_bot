@@ -1,0 +1,41 @@
+[project]
+name = "wankorobot"
+version = "1.1.0"
+description = "Discord bot for the Toureikai community"
+readme = "README.md"
+requires-python = ">=3.10,<3.15"
+dependencies = [
+    "discord.py==2.6.4",
+    "aiohttp==3.12.14",
+    "python-dotenv==1.2.1",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = ["OLD"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["main.py", "cogs", "tests"]
+exclude = "^OLD/"
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[tool.coverage.run]
+branch = true
+source = ["."]
+omit = ["OLD/*", "tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
