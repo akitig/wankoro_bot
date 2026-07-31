@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import random
 import time
@@ -9,6 +8,8 @@ from typing import Any, Dict, Optional, Tuple, Callable
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+from storage.json_store import load_json_or_default, save_json_atomic
 
 
 def _get_int_env(key: str, default: int) -> int:
@@ -59,28 +60,16 @@ class _JoyaStore:
     def __init__(self, path: str) -> None:
         self._path = path
         self._data: Dict[str, Any] = {"guilds": {}, "users": {}}
-        self._ensure_parent()
         self._load()
 
-    def _ensure_parent(self) -> None:
-        parent = os.path.dirname(self._path)
-        if parent and not os.path.exists(parent):
-            os.makedirs(parent, exist_ok=True)
-
     def _load(self) -> None:
-        if not os.path.exists(self._path):
-            return
-        try:
-            with open(self._path, "r", encoding="utf-8") as f:
-                self._data = json.load(f)
-        except Exception:
-            self._data = {"guilds": {}, "users": {}}
+        self._data = load_json_or_default(
+            self._path,
+            {"guilds": {}, "users": {}},
+        )
 
     def save(self) -> None:
-        tmp = self._path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self._data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, self._path)
+        save_json_atomic(self._path, self._data)
 
     def get_guild(self, guild_id: int) -> Dict[str, Any]:
         g = self._data.setdefault("guilds", {})

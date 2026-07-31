@@ -1,10 +1,12 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-import aiohttp
-import random
 import os
-import json
+import random
+
+import aiohttp
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+from storage.json_store import load_json_or_default, save_json_atomic
 
 VALO_API_URL = "https://valorant-api.com/v1/maps"
 BAN_FILE = "valomap_bans.json"
@@ -21,22 +23,16 @@ class ValorantMap(commands.Cog):
     # 🔹 BANファイルの読み書き
     # -------------------------------
     def load_bans(self):
-        if os.path.exists(BAN_FILE):
-            try:
-                with open(BAN_FILE, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    self.banned_maps = set(data.get("bans", []))
-                print(f"🚫 Loaded banned maps: {self.banned_maps}")
-            except Exception as e:
-                print(f"⚠️ Failed to load ban file: {e}")
+        data = load_json_or_default(BAN_FILE, {"bans": []})
+        self.banned_maps = set(data.get("bans", []))
+        print(f"🚫 Loaded banned maps: {self.banned_maps}")
 
     def save_bans(self):
         try:
-            with open(BAN_FILE, "w", encoding="utf-8") as f:
-                json.dump({"bans": list(self.banned_maps)}, f, ensure_ascii=False, indent=2)
+            save_json_atomic(BAN_FILE, {"bans": list(self.banned_maps)})
             print(f"💾 Saved banned maps: {self.banned_maps}")
-        except Exception as e:
-            print(f"⚠️ Failed to save ban file: {e}")
+        except (OSError, TypeError, ValueError):
+            print("⚠️ Failed to save ban file.")
 
     # -------------------------------
     # 🔹 マップデータ取得

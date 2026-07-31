@@ -189,9 +189,10 @@ GitHub Actionsは`main`または`develop`へのpushとpull requestで、Python 3
 ```bash
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -m pip install ruff==0.12.4
+.venv/bin/python -m pip install pytest==8.4.1 ruff==0.12.4
 .venv/bin/python -m pip check
 .venv/bin/ruff check .
+.venv/bin/python -m pytest
 .venv/bin/python -m compileall -q .
 env APPLICATION_ID=1 GUILD_ID=1 .venv/bin/python -c 'import main'
 env APPLICATION_ID=1 GUILD_ID=1 .venv/bin/python -c \

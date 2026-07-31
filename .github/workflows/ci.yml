@@ -37,13 +37,16 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Install Ruff
-        run: pip install ruff==0.12.4
+        run: pip install pytest==8.4.1 ruff==0.12.4
 
       - name: Check installed dependencies
         run: pip check
 
       - name: Run Ruff
         run: ruff check .
+
+      - name: Run tests
+        run: python -m pytest
 
       - name: Compile Python sources
         run: python -m compileall -q .

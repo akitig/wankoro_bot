@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import random
 from dataclasses import dataclass
@@ -8,6 +7,8 @@ from typing import Dict, Optional
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+from storage.json_store import load_json_or_default, save_json_atomic
 
 
 def _get_env_str(key: str, default: str) -> str:
@@ -51,37 +52,20 @@ class OmikujiStore:
         self._lock = asyncio.Lock()
         self._points: Dict[str, int] = {}
 
-    def _ensure_dir(self) -> None:
-        d = os.path.dirname(self._path)
-        if d and not os.path.exists(d):
-            os.makedirs(d, exist_ok=True)
-
     async def load(self) -> None:
         async with self._lock:
-            self._ensure_dir()
-            if not os.path.exists(self._path):
-                self._points = {}
-                return
-            try:
-                with open(self._path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, dict):
-                    self._points = {
-                        str(k): int(v) for k, v in data.items()
-                        if str(k).isdigit()
-                    }
-                else:
-                    self._points = {}
-            except (OSError, ValueError, TypeError):
+            data = load_json_or_default(self._path, {})
+            if isinstance(data, dict):
+                self._points = {
+                    str(k): int(v) for k, v in data.items()
+                    if str(k).isdigit()
+                }
+            else:
                 self._points = {}
 
     async def save(self) -> None:
         async with self._lock:
-            self._ensure_dir()
-            tmp = self._path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(self._points, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, self._path)
+            save_json_atomic(self._path, self._points)
 
     async def get(self, user_id: int) -> int:
         async with self._lock:
