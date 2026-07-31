@@ -21,29 +21,33 @@ def _service(tmp_path: Path, *, cutoff: str = "2025-12-26T07:00:00+09:00"):
 
 def test_initial_state_and_nickname_round_trip(tmp_path: Path) -> None:
     service = _service(tmp_path)
-    assert service._state == {"orig_nick": {}, "panel_message_id": 0}
-
-    service.set_orig_nick(10, 20, "元の名前")
-    service.set_orig_nick(10, 21, None)
-    service.set_panel_message_id(999)
-    service._write_state()
+    repository = service._repository
+    repository.save_original_nickname(10, 20, "元の名前")
+    repository.save_original_nickname(10, 21, None)
+    repository.set_panel_message_id(999)
+    repository.save()
 
     saved = json.loads((tmp_path / "xmas-state.json").read_text(encoding="utf-8"))
     assert saved == {
         "orig_nick": {"10": {"20": "元の名前", "21": xmas.STATE_NONE}},
         "panel_message_id": 999,
     }
-    assert service.get_orig_nick(10, 20) == "元の名前"
-    assert service.get_orig_nick(10, 21) == xmas.STATE_NONE
-    service.clear_orig_nick(10, 20)
-    assert service.get_orig_nick(10, 20) is None
+    assert repository.get_original_nickname(10, 20) == "元の名前"
+    assert repository.get_original_nickname(10, 21) == xmas.STATE_NONE
+    repository.delete_original_nickname(10, 20)
+    assert repository.get_original_nickname(10, 20) is None
 
 
 def test_state_read_fills_existing_missing_fields(tmp_path: Path) -> None:
     path = tmp_path / "xmas-state.json"
     path.write_text("{}", encoding="utf-8")
 
-    assert _service(tmp_path)._state == {"orig_nick": {}, "panel_message_id": 0}
+    service = _service(tmp_path)
+    service._repository.save()
+    assert json.loads(path.read_text(encoding="utf-8")) == {
+        "orig_nick": {},
+        "panel_message_id": 0,
+    }
 
 
 def test_csv_reward_parsing_preserves_existing_rules(tmp_path: Path) -> None:

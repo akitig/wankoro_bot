@@ -14,7 +14,7 @@ from typing import Any
 
 import discord
 
-from storage.json_store import load_json_or_default, save_json_atomic
+from repositories.xmas_repository import STATE_NONE, XmasRepository
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +22,6 @@ try:
     from zoneinfo import ZoneInfo
 except ImportError:
     ZoneInfo = None
-
-STATE_NONE = "__NONE__"
 
 CLOSED_MESSAGES_MAIN = [
     "まだクリスマスの気分かい？\n街はもう、いつもの顔に戻ってる。",
@@ -68,60 +66,13 @@ class XmasService:
     ) -> None:
         self.bot = bot
         self._csv_path = csv_path
-        self._state_path = state_path
         self._channel_id = channel_id
         self._cutoff_raw = cutoff
         self._panel_view_factory = panel_view_factory
         self._result_view_factory = result_view_factory
-        self._state = self._read_state()
+        self._repository = XmasRepository(state_path)
+        self._repository.load()
         self._rewards: list[t_reward] = []
-
-    def _read_state(self) -> dict[str, Any]:
-        data = load_json_or_default(
-            self._state_path,
-            {"orig_nick": {}, "panel_message_id": 0},
-        )
-        if "orig_nick" not in data or not isinstance(data["orig_nick"], dict):
-            data["orig_nick"] = {}
-        if "panel_message_id" not in data:
-            data["panel_message_id"] = 0
-        return data
-
-    def _write_state(self) -> None:
-        save_json_atomic(self._state_path, self._state)
-
-    def get_orig_nick(self, guild_id: int, user_id: int) -> str | None:
-        guild_state = self._state.get("orig_nick", {}).get(str(guild_id), {})
-        value = guild_state.get(str(user_id))
-        if value is None:
-            return None
-        if value == STATE_NONE:
-            return STATE_NONE
-        if isinstance(value, str):
-            return value
-        return None
-
-    def set_orig_nick(
-        self,
-        guild_id: int,
-        user_id: int,
-        nickname: str | None,
-    ) -> None:
-        self._state.setdefault("orig_nick", {})
-        self._state["orig_nick"].setdefault(str(guild_id), {})
-        value = STATE_NONE if nickname is None else nickname
-        self._state["orig_nick"][str(guild_id)][str(user_id)] = value
-
-    def clear_orig_nick(self, guild_id: int, user_id: int) -> None:
-        self._state.setdefault("orig_nick", {})
-        self._state["orig_nick"].setdefault(str(guild_id), {})
-        self._state["orig_nick"][str(guild_id)].pop(str(user_id), None)
-
-    def get_panel_message_id(self) -> int:
-        return int(self._state.get("panel_message_id", 0) or 0)
-
-    def set_panel_message_id(self, message_id: int) -> None:
-        self._state["panel_message_id"] = message_id
 
     def read_csv_rewards(self) -> list[t_reward]:
         if not self._csv_path.exists():
@@ -241,12 +192,14 @@ class XmasService:
         user_id: int,
         member: discord.Member,
     ) -> None:
-        if self.get_orig_nick(guild_id, user_id) is not None:
-            return
         if member.nick is None:
-            self.set_orig_nick(guild_id, user_id, None)
+            self._repository.save_original_nickname(guild_id, user_id, None)
             return
-        self.set_orig_nick(guild_id, user_id, self._base_name(member.nick))
+        self._repository.save_original_nickname(
+            guild_id,
+            user_id,
+            self._base_name(member.nick),
+        )
 
     @staticmethod
     async def _try_set_nick(member: discord.Member, nick: str | None) -> bool:
@@ -279,7 +232,7 @@ class XmasService:
             return
         guild_id = interaction.guild.id
         user_id = interaction.user.id
-        original = self.get_orig_nick(guild_id, user_id)
+        original = self._repository.get_original_nickname(guild_id, user_id)
         if original is None:
             current = interaction.user.nick or ""
             base = self._base_name(current) if current else ""
@@ -301,8 +254,8 @@ class XmasService:
         target = None if original == STATE_NONE else original
         changed = await self._try_set_nick(interaction.user, target)
         if changed:
-            self.clear_orig_nick(guild_id, user_id)
-            self._write_state()
+            self._repository.delete_original_nickname(guild_id, user_id)
+            self._repository.save()
             await interaction.response.send_message("🎄まほうはおしまい🎄", ephemeral=True)
         else:
             await interaction.response.send_message(
@@ -333,7 +286,7 @@ class XmasService:
         guild_id = interaction.guild.id
         user_id = interaction.user.id
         self._save_orig_once(guild_id, user_id, interaction.user)
-        self._write_state()
+        self._repository.save()
         new_nick = self._make_gacha_nick(interaction.user.display_name, reward.name)
         changed = await self._try_set_nick(interaction.user, new_nick)
         icon = reward.icon if reward.icon else "🎁"
@@ -361,7 +314,7 @@ class XmasService:
         guild_id: int,
         member: discord.Member,
     ) -> tuple[str | None, bool]:
-        original = self.get_orig_nick(guild_id, member.id)
+        original = self._repository.get_original_nickname(guild_id, member.id)
         if original is not None:
             if original == STATE_NONE:
                 return (None, True)
@@ -381,7 +334,7 @@ class XmasService:
         channel = self.bot.get_channel(self._channel_id)
         if not isinstance(channel, discord.TextChannel | discord.Thread):
             return
-        message_id = self.get_panel_message_id()
+        message_id = self._repository.get_panel_message_id()
         if message_id:
             try:
                 await channel.fetch_message(message_id)
@@ -402,8 +355,8 @@ class XmasService:
         except (discord.Forbidden, discord.HTTPException):
             logger.exception("Failed to create the Xmas panel")
             return
-        self.set_panel_message_id(message.id)
-        self._write_state()
+        self._repository.set_panel_message_id(message.id)
+        self._repository.save()
 
     async def send_panel(self, interaction: discord.Interaction) -> None:
         await interaction.response.send_message(
@@ -420,13 +373,7 @@ class XmasService:
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
         guild_id = interaction.guild.id
-        guild_state = self._state.get("orig_nick", {}).get(str(guild_id), {})
-        targets: set[int] = set()
-        for user_id in list(guild_state.keys()):
-            try:
-                targets.add(int(user_id))
-            except ValueError:
-                continue
+        targets = set(self._repository.get_original_user_ids(guild_id))
         if interaction.guild.chunked is False:
             try:
                 await interaction.guild.chunk()
@@ -454,7 +401,7 @@ class XmasService:
             )
             if target_nick is None and member.nick is None:
                 if should_clear:
-                    self.clear_orig_nick(guild_id, user_id)
+                    self._repository.delete_original_nickname(guild_id, user_id)
                     cleared += 1
                 skip_count += 1
                 continue
@@ -462,12 +409,12 @@ class XmasService:
             if changed:
                 ok_count += 1
                 if should_clear:
-                    self.clear_orig_nick(guild_id, user_id)
+                    self._repository.delete_original_nickname(guild_id, user_id)
                     cleared += 1
             else:
                 fail_count += 1
             await asyncio.sleep(0.8)
-        self._write_state()
+        self._repository.save()
         message = (
             "🎄 全員戻し：結果\n"
             f"✅ 成功：{ok_count}\n"
