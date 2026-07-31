@@ -1,10 +1,10 @@
 import asyncio
-import logging
 
 import pytest
 
 import cogs.dm_forward as dm_module
 from cogs.dm_forward import DmForwardCog
+from services.dm_forward_service import DmForwardService
 from tests.helpers.discord_fakes import (
     FakeAuthor,
     FakeBot,
@@ -19,6 +19,7 @@ def _cog(bot: FakeBot | None = None) -> DmForwardCog:
     cog = DmForwardCog.__new__(DmForwardCog)
     cog.bot = bot or FakeBot()
     cog.forward_user_id = 700
+    cog.service = DmForwardService(cog.bot, cog.forward_user_id)
     return cog
 
 
@@ -69,49 +70,44 @@ def test_guild_message_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     assert target.sent == []
 
 
-def test_missing_forward_target_is_logged_without_message_body(
+def test_unconfigured_forward_target_is_ignored(
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setattr(dm_module.discord, "DMChannel", FakeDMChannel)
     bot = FakeBot()
-    bot.fetch_error = LookupError("target missing")
-    body = "do-not-log-this-body"
+    cog = _cog(bot)
+    cog.forward_user_id = None
+    calls = []
 
-    with caplog.at_level(logging.ERROR):
-        asyncio.run(
-            _cog(bot).on_message(
-                FakeMessage(FakeAuthor(800), FakeDMChannel(), content=body)
-            )
+    class ServiceStub:
+        async def forward_message(self, message):
+            calls.append(message)
+
+    cog.service = ServiceStub()
+
+    asyncio.run(
+        cog.on_message(
+            FakeMessage(FakeAuthor(800), FakeDMChannel(), content="ignored")
         )
+    )
 
-    assert "Failed to resolve the configured DM forwarding target" in caplog.text
-    assert body not in caplog.text
+    assert calls == []
 
 
-def test_send_failure_is_logged_without_author_or_body(
+def test_direct_message_is_delegated_to_service(
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setattr(dm_module.discord, "DMChannel", FakeDMChannel)
-    target = FakeMember(700)
+    cog = _cog()
+    calls = []
 
-    async def fail_send(*args, **kwargs):
-        raise RuntimeError("transport unavailable")
+    class ServiceStub:
+        async def forward_message(self, message):
+            calls.append(message)
 
-    target.send = fail_send
-    bot = FakeBot()
-    bot.users[700] = target
-    author = FakeAuthor(800, name="private-member-name")
-    body = "private-message-body"
+    cog.service = ServiceStub()
+    message = FakeMessage(FakeAuthor(800), FakeDMChannel(), content="forward")
 
-    with caplog.at_level(logging.ERROR):
-        asyncio.run(
-            _cog(bot).on_message(
-                FakeMessage(author, FakeDMChannel(), content=body)
-            )
-        )
+    asyncio.run(cog.on_message(message))
 
-    assert "Failed to forward a DM message" in caplog.text
-    assert author.name not in caplog.text
-    assert body not in caplog.text
+    assert calls == [message]
