@@ -11,15 +11,7 @@ from discord.ext import commands
 
 from config import get_config
 from services.valocheck_service import (
-    DEFAULT_INTRO_TEXT,
-    DEFAULT_INTRO_TITLE,
-    DEFAULT_QUESTIONS,
     ValocheckService,
-    _calc_max_score,
-    _load_intro,
-    _load_json_file,
-    _normalize_questions,
-    _utc_now,
 )
 
 if TYPE_CHECKING:
