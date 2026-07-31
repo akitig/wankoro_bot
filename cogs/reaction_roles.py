@@ -1,69 +1,72 @@
-import os
+import logging
+import re
 import discord
 from discord.ext import commands
 from discord import app_commands
+
+from config import get_config
+from services.reaction_role_service import ReactionRoleService
+
+logger = logging.getLogger(__name__)
+
+ENV_KEY_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+
+# Discord上のロール名とは分離した、systemd EnvironmentFile互換の設定名。
+GAME_REACTION_ROLES = {
+    "valo": ("VALO民", "RR_GAME_VALO"),
+    "tarkov": ("EFT民", "RR_GAME_EFT"),
+    "st6": ("SF6民", "RR_GAME_SF6"),
+    "mh": ("モンハン民", "RR_GAME_MONSTER_HUNTER"),
+    "ow2": ("OW民", "RR_GAME_OW2"),
+    "apex": ("APEX民", "RR_GAME_APEX"),
+}
 
 
 class ReactionRoles(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.GUILD_ID = int(os.getenv("GUILD_ID"))
+        config = get_config()
+        self.GUILD_ID = config.guild_id
 
         # カンマ区切りで複数のメッセージに対応
-        raw_ids = os.getenv("REACTION_ROLE_MESSAGE_IDS", "")
-        self.REACTION_ROLE_MESSAGE_IDS = {
-            int(x) for x in raw_ids.split(",") if x.strip().isdigit()
-        }
+        self.REACTION_ROLE_MESSAGE_IDS = set(config.reaction_role_message_ids)
+        self._reaction_role_values = config.reaction_role_values
 
         self.reaction_role_map = {}
         self.load_reaction_roles()
+        self.service = ReactionRoleService(
+            bot,
+            guild_id=self.GUILD_ID,
+            message_ids=self.REACTION_ROLE_MESSAGE_IDS,
+            reaction_role_map=self.reaction_role_map,
+        )
 
     # ======================================================
     # ✅ .env 読み込み
     # ======================================================
     def load_reaction_roles(self):
         self.reaction_role_map.clear()
-        for key, value in os.environ.items():
+        for key, value in self._reaction_role_values.items():
             if key.startswith("RR_"):
                 try:
                     emoji_id, role_id = value.split(":")
                     self.reaction_role_map[int(emoji_id)] = int(role_id)
                 except ValueError:
-                    print(f"⚠️ Invalid RR_ format: {key}={value}")
-        print(f"✅ Reaction roles loaded: {len(self.reaction_role_map)} entries")
+                    logger.warning("Invalid Reaction Role configuration: key=%s", key)
+                if not ENV_KEY_PATTERN.fullmatch(key):
+                    logger.warning(
+                        "Non-ASCII Reaction Role environment key detected"
+                    )
+        logger.info(
+            "Reaction Role configuration loaded: count=%d",
+            len(self.reaction_role_map),
+        )
 
     # ======================================================
     # ✅ ロール操作共通処理
     # ======================================================
     async def handle_reaction(self, payload, add=True):
-        if payload.message_id not in self.REACTION_ROLE_MESSAGE_IDS:
-            return
-        if payload.user_id == self.bot.user.id:
-            return
-
-        guild = self.bot.get_guild(self.GUILD_ID)
-        if not guild:
-            return
-
-        member = guild.get_member(payload.user_id)
-        if not member:
-            return
-
-        emoji_id = payload.emoji.id if payload.emoji.is_custom_emoji() else None
-        role_id = self.reaction_role_map.get(emoji_id)
-        if not role_id:
-            return
-
-        role = guild.get_role(role_id)
-        if not role:
-            return
-
-        if add:
-            await member.add_roles(role)
-            print(f"✅ Added {role.name} → {member.display_name}")
-        else:
-            await member.remove_roles(role)
-            print(f"🗑 Removed {role.name} → {member.display_name}")
+        await self.service.handle_reaction(payload, add=add)
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
@@ -91,38 +94,17 @@ class ReactionRoles(commands.Cog):
         msg = await interaction.channel.send(embed=embed)
         await interaction.response.send_message("✅ ゲーム選択メッセージを作成しました！", ephemeral=True)
 
-        reaction_map = {
-            "valo": "VALO民",
-            "tarkov": "EFT民",
-            "st6": "SF6民",
-            "mh": "モンハン民",
-            "ow2": "OW民",
-            "apex": "APEX民",
-        }
-
-        for emoji_name in reaction_map:
+        for emoji_name in GAME_REACTION_ROLES:
             emoji = discord.utils.get(guild.emojis, name=emoji_name)
             if emoji:
                 await msg.add_reaction(emoji)
-                print(f"✅ Added :{emoji_name}:")
+                logger.debug("Reaction added to game-role message: %s", emoji_name)
             else:
-                print(f"⚠️ Emoji :{emoji_name}: not found")
+                logger.warning("Configured game emoji was not found: %s", emoji_name)
 
-        # ======== .env 出力（改善版） ========
-        print("\n📝 以下を .env に必ず追記してください。")
-        print("（他の ID がある場合はカンマ区切りで追加）\n")
-
-        all_ids = list(self.REACTION_ROLE_MESSAGE_IDS | {msg.id})
-        print("# Reaction Role 対象メッセージID")
-        print(f"REACTION_ROLE_MESSAGE_IDS={','.join(str(x) for x in all_ids)}\n")
-
-        print("# Reaction Role 対応表（emoji_id:role_id）")
-        for emoji_name, role_name in reaction_map.items():
-            emoji = discord.utils.get(guild.emojis, name=emoji_name)
-            role = discord.utils.get(guild.roles, name=role_name)
-            if emoji and role:
-                print(f"RR_{role_name.upper()}={emoji.id}:{role.id}")
-        print()
+        logger.info(
+            "Game Reaction Role message created; deployment configuration update required"
+        )
 
     # ======================================================
     # ✅ VALORANT ランク版
@@ -158,25 +140,13 @@ class ReactionRoles(commands.Cog):
             emoji = discord.utils.get(guild.emojis, name=emoji_name)
             if emoji:
                 await msg.add_reaction(emoji)
-                print(f"✅ Added :{emoji_name}:")
+                logger.debug("Reaction added to rank-role message: %s", emoji_name)
             else:
-                print(f"⚠️ Emoji :{emoji_name}: not found")
+                logger.warning("Configured rank emoji was not found: %s", emoji_name)
 
-        # ======== .env 出力（改善版） ========
-        print("\n📝 以下を .env に必ず追記してください。")
-        print("（他の ID がある場合はカンマ区切りで追加）\n")
-
-        all_ids = list(self.REACTION_ROLE_MESSAGE_IDS | {msg.id})
-        print("# Reaction Role 対象メッセージID")
-        print(f"REACTION_ROLE_MESSAGE_IDS={','.join(str(x) for x in all_ids)}\n")
-
-        print("# Reaction Role 対応表（emoji_id:role_id）")
-        for emoji_name, role_name in rank_map.items():
-            emoji = discord.utils.get(guild.emojis, name=emoji_name)
-            role = discord.utils.get(guild.roles, name=role_name)
-            if emoji and role:
-                print(f"RR_{role_name.upper()}={emoji.id}:{role.id}")
-        print()
+        logger.info(
+            "Rank Reaction Role message created; deployment configuration update required"
+        )
 
     # ======================================================
     # ❗ /rrreload 設定再読み込み
@@ -206,23 +176,6 @@ class ReactionRoles(commands.Cog):
 
         embed.add_field(name="カスタム絵文字 → ロール", value="\n".join(lines), inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=False)
-
-    # ======================================================
-    # 起動時同期
-    # ======================================================
-    @commands.Cog.listener()
-    async def on_ready(self):
-        guild = discord.Object(id=self.GUILD_ID)
-        try:
-            self.bot.tree.add_command(self.rrcreate, guild=guild)
-            self.bot.tree.add_command(self.rrcreate_valorank, guild=guild)
-            self.bot.tree.add_command(self.rrreload, guild=guild)
-            self.bot.tree.add_command(self.rrstatus, guild=guild)
-            await self.bot.tree.sync(guild=guild)
-            print("✅ ReactionRole commands synced successfully.")
-        except Exception as e:
-            print(f"⚠️ Failed to sync ReactionRole commands: {e}")
-
 
 async def setup(bot):
     await bot.add_cog(ReactionRoles(bot))

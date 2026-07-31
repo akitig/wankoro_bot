@@ -40,7 +40,7 @@ current baseline explicit; a later tooling PR may generate one from the other.
 
 - Confirm no `main.py` or `cogs/*.py` diff.
 - Parse `pyproject.toml`.
-- Verify `.env.sample` remains trackable.
+- Verify `.env.example` remains trackable.
 - Verify secrets, caches, logs, runtime state, and temporary files are ignored.
 - Confirm the existing modified runtime JSON files remain untouched.
 

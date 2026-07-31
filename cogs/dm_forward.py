@@ -1,22 +1,15 @@
-import os
 import discord
 from discord.ext import commands
 
-
-def _get_opt_int_env(key: str):
-    v = os.getenv(key)
-    if not v:
-        return None
-    try:
-        return int(v)
-    except ValueError:
-        return None
+from config import get_config
+from services.dm_forward_service import DmForwardService
 
 
 class DmForwardCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.forward_user_id = _get_opt_int_env("DM_FORWARD_USER_ID")
+        self.forward_user_id = get_config().dm_forward_user_id
+        self.service = DmForwardService(bot, self.forward_user_id)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -27,36 +20,7 @@ class DmForwardCog(commands.Cog):
         if not self.forward_user_id:
             return
 
-        # 転送先ユーザー取得
-        target = self.bot.get_user(self.forward_user_id)
-        if target is None:
-            try:
-                target = await self.bot.fetch_user(self.forward_user_id)
-            except Exception:
-                return
-
-        # 転送本文
-        content = message.content or ""
-        header = (
-            f"📩 **DM転送**\n"
-            f"From: **{message.author}** (`{message.author.id}`)\n"
-        )
-
-        # まず本文を送る
-        try:
-            if content.strip():
-                await target.send(header + content)
-            else:
-                await target.send(header + "（本文なし）")
-        except Exception:
-            return
-
-        # 添付ファイルも転送（URLだけでもOKならこれで十分）
-        for a in message.attachments[:10]:
-            try:
-                await target.send(f"📎 添付: {a.url}")
-            except Exception:
-                pass
+        await self.service.forward_message(message)
 
 
 async def setup(bot: commands.Bot):

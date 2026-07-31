@@ -74,12 +74,19 @@ BAN設定は `valomap_bans.json` に永続保存され、Bot再起動後も保�
 > ファイル：`main.py`
 
 Bot全体のエントリーポイント。  
-`.env` の設定を読み込み、以下の3つのCogを起動します。
+`.env` の設定を読み込み、以下の10個のCogを起動します。
 
 ```bash
 cogs/welcome
 cogs/reaction_roles
 cogs/valomap
+cogs/leave_log
+cogs/valocheck
+cogs/valorecruit
+cogs/dm_forward
+cogs/2025_xmas_gacha
+cogs/2026_joya_gacha
+cogs/2026_omikuji_gacha
 ```
 
 起動時には全スラッシュコマンドを自動同期し、  
@@ -89,12 +96,27 @@ cogs/valomap
 
 ## 📦 セットアップ手順
 
-### 1. 必要パッケージのインストール
+### 1. プロジェクト固有の仮想環境を作成
+
+現在の本番環境と同じPython 3.10系の`python3`を使用します。Python自体の
+バージョンは、このvenv化では変更しません。
+
 ```bash
-pip install -U discord.py aiohttp python-dotenv
+python3 --version
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
 ```
 
+`.venv/`はローカル生成物であり、Git管理対象外です。
+
 ### 2. `.env` を設定
+
+`.env.example` をコピーし、値を設定してください。systemdの
+`EnvironmentFile`で読み込めるよう、環境変数名にはASCII英大文字・数字・
+アンダースコアのみを使用します。全設定、型、デフォルト値、runtime pathは
+[`docs/architecture/configuration.md`](docs/architecture/configuration.md)を
+参照してください。
+
 ```env
 DISCORD_TOKEN=xxxxxxxxxxxxxxxx
 APPLICATION_ID=xxxxxxxxxxxxxxxx
@@ -113,9 +135,17 @@ ROLE_C=3333333333
 LEAVE_LOG_CHANNEL_ID=4444444444
 
 # リアクションロール設定例
-REACTION_ROLE_MESSAGE_ID=5555555555
-RR_VALO民=123456789012345678:987654321098765432
+REACTION_ROLE_MESSAGE_IDS=5555555555
+RR_GAME_VALO=123456789012345678:987654321098765432
+RR_GAME_EFT=123456789012345678:987654321098765432
+RR_GAME_SF6=123456789012345678:987654321098765432
+RR_GAME_MONSTER_HUNTER=123456789012345678:987654321098765432
+RR_GAME_OW2=123456789012345678:987654321098765432
+RR_GAME_APEX=123456789012345678:987654321098765432
 ```
+
+Reaction Roleの値は `カスタム絵文字ID:ロールID` です。設定名はASCIIですが、
+Discord上のロール名・絵文字名・表示内容には影響しません。
 
 ---
 
@@ -123,32 +153,23 @@ RR_VALO民=123456789012345678:987654321098765432
 
 ### ローカルで動かす
 ```bash
-python3 main.py
+.venv/bin/python main.py
 ```
 
-### systemd サービスで常駐起動（例）
-`/etc/systemd/system/wankorobot.service` に以下を作成：
+### systemd サービスで常駐起動
+
+現在のUnitの`WorkingDirectory`、`EnvironmentFile`、再起動設定、ログ設定などを
+維持し、`ExecStart`のPythonだけをプロジェクト内の`.venv/bin/python`へ切り替えます。
+本番への移行前後の確認、Unit編集、ロールバックの詳細は
+[`docs/systemd-python-venv.md`](docs/systemd-python-venv.md)を参照してください。
+
+移行後の主要設定は次の形になります。
 
 ```ini
-[Unit]
-Description=Discord Bot - WankoroBot（灯麗会）
-After=network.target
-
 [Service]
-ExecStart=/usr/bin/python3 /home/akitig/Desktop/Bot/Toureikai/Wankorobot/main.py
 WorkingDirectory=/home/akitig/Desktop/Bot/Toureikai/Wankorobot
-Restart=always
-User=akitig
-
-[Install]
-WantedBy=multi-user.target
-```
-
-有効化と起動：
-```bash
-sudo systemctl enable wankorobot
-sudo systemctl start wankorobot
-sudo journalctl -u wankorobot -f
+ExecStart=/home/akitig/Desktop/Bot/Toureikai/Wankorobot/.venv/bin/python /home/akitig/Desktop/Bot/Toureikai/Wankorobot/main.py
+EnvironmentFile=/home/akitig/Desktop/Bot/Toureikai/Wankorobot/.env
 ```
 
 ---
@@ -157,11 +178,64 @@ sudo journalctl -u wankorobot -f
 
 | 項目 | 内容 |
 |------|------|
-| 言語 | Python 3.10+ |
+| 言語 | Python 3.10（現在の本番バージョンを維持） |
 | ライブラリ | discord.py v2.x / aiohttp / python-dotenv |
-| データ保存 | JSON・.env |
+| データ保存 | Repository経由のruntime JSON・.env |
 | 実行方式 | systemd 常駐 or CLI実行 |
-| 構造 | Cog構成（`welcome` / `reaction_roles` / `valomap`） |
+| 構造 | 10 Cog / Service層 / Repository層 / storage層 |
+
+---
+
+### 主要ディレクトリ構成
+
+```text
+cogs/          Discord Command・Interaction・View境界
+services/      業務ロジックとDiscord API操作
+repositories/  機能ごとの永続状態と保存API（5 Repository）
+storage/       共通のJSON読込・atomic保存
+tests/         characterization・境界・Repository・構造テスト
+```
+
+依存方向と永続化の設計ルールは
+[`docs/architecture/repositories.md`](docs/architecture/repositories.md)を参照してください。
+
+---
+
+## ✅ CI
+
+GitHub Actionsは`main`または`develop`へのpushとpull requestで、Python 3.10を使用して
+依存関係、Ruff、全Pythonファイルの構文、`main.py`、全Cogのimportを確認します。
+ダミーのApplication IDとGuild IDだけを使用し、Discord Tokenは要求しません。
+`main.py`は実行しないため、BotがDiscordへ接続することもありません。
+
+ローカルではプロジェクト固有の仮想環境で同じチェックを実行できます。
+
+```bash
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install pytest==8.4.1 ruff==0.12.4
+.venv/bin/python -m pip check
+.venv/bin/ruff check .
+.venv/bin/python -m pytest
+.venv/bin/python -m compileall -q .
+env APPLICATION_ID=1 GUILD_ID=1 .venv/bin/python -c 'import main'
+env APPLICATION_ID=1 GUILD_ID=1 .venv/bin/python -c \
+  'import importlib, main; [importlib.import_module(name) for name in main.COGS]'
+```
+
+---
+
+## 📝 ログ
+
+ログは `timestamp level logger名 message` の共通形式です。既定のログレベルは
+`INFO`で、必要な場合は既存設定と互換性を保ったまま `.env` の
+`LOG_LEVEL=DEBUG` などで変更できます。空または無効な値は安全に`INFO`へ戻ります。
+
+`INFO`以下はstdout、`WARNING`以上はstderrへ出力されます。このため既存systemd
+Unitの`StandardOutput`（`bot.log`）と`StandardError`（`bot.err`）は変更不要です。
+例外にはstack traceを付けますが、Discord Token、`.env`内容、JSON全文、DM本文、
+個人情報はログへ記録しません。詳細は
+[`docs/architecture/logging.md`](docs/architecture/logging.md)を参照してください。
 
 ---
 

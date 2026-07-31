@@ -1,10 +1,22 @@
-import os
 import asyncio
+import logging
+
 import discord
-from dotenv import load_dotenv
 from discord.ext import commands
 
-load_dotenv()
+from config import get_config
+from logging_config import configure_logging
+
+logger = logging.getLogger(__name__)
+
+try:
+    config = get_config()
+except Exception:
+    configure_logging("INFO")
+    logger.critical("Bot configuration could not be loaded", exc_info=True)
+    raise
+
+configure_logging(config.log_level, secrets=(config.discord_token,))
 intents = discord.Intents.all()
 
 COGS = [
@@ -25,33 +37,40 @@ class MyBot(commands.Bot):
         for cog in COGS:
             try:
                 await self.load_extension(cog)
-                print(f"✅ Loaded: {cog}")
-            except Exception as e:
-                print(f"❌ Failed to load {cog}: {e}")
+                logger.info("Cog loaded: %s", cog)
+            except Exception:
+                logger.exception("Cog failed to load: %s", cog)
 
-        guild = discord.Object(id=int(os.getenv("GUILD_ID")))
+        guild = discord.Object(id=config.guild_id)
 
         # Cog側の @app_commands.command をギルドに即反映させる
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)
 
-        print(
-            f"✅ Slash commands synced to guild {guild.id}: "
-            f"{[cmd.name for cmd in self.tree.get_commands(guild=guild)]}"
+        logger.info(
+            "Application commands synced: count=%d",
+            len(self.tree.get_commands(guild=guild)),
         )
 
 bot = MyBot(
     command_prefix="/",
     intents=intents,
-    application_id=int(os.getenv("APPLICATION_ID")),
+    application_id=config.application_id,
 )
 
 @bot.event
 async def on_ready():
-    print(f"✅ Logged in as {bot.user} ({bot.user.id})")
+    logger.info("Bot connected to Discord")
 
 async def main():
-    await bot.start(os.getenv("DISCORD_TOKEN"))
+    logger.info("Bot startup requested")
+    try:
+        if not config.discord_token:
+            raise RuntimeError("Missing environment variable: DISCORD_TOKEN")
+        await bot.start(config.discord_token)
+    except Exception:
+        logger.critical("Bot startup failed", exc_info=True)
+        raise
 
 if __name__ == "__main__":
     asyncio.run(main())

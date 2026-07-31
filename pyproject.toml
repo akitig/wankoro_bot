@@ -22,6 +22,22 @@ extend-exclude = ["OLD"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC"]
 
+[tool.ruff.lint.per-file-ignores]
+# Baseline existing Bot code without mixing a behavior-preserving refactor into
+# the initial CI change. Remove these incrementally after characterization tests.
+"main.py" = ["I001"]
+"cogs/*.py" = [
+    "ASYNC230",
+    "E501",
+    "F401",
+    "I001",
+    "UP006",
+    "UP015",
+    "UP035",
+    "UP038",
+    "UP045",
+]
+
 [tool.mypy]
 python_version = "3.10"
 files = ["main.py", "cogs", "tests"]
