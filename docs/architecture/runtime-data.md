@@ -55,3 +55,23 @@ Future runtime storage must provide:
 
 For the current single-VPS design, SQLite is the preferred long-term runtime
 store. Master configuration should remain human-reviewable JSON/CSV in Git.
+
+## Current JSON access boundary
+
+JSON file access is centralized in `storage/json_store.py`. Both runtime state
+and master configuration use explicit UTF-8 reads. Runtime writes serialize to
+a uniquely named temporary file in the destination directory, flush and sync
+the file, and then atomically replace the destination. A failed serialization
+or replace leaves the previous destination intact and removes the temporary
+file.
+
+A missing runtime file still produces the same Cog-specific default structure.
+Malformed JSON is logged by path without logging its contents and raises an
+error instead of being treated as empty state. This prevents a later save from
+silently replacing damaged, potentially recoverable data.
+
+Atomic replacement prevents partial JSON files and collisions on a shared
+fixed `.tmp` filename. It does not provide transactions across multiple files,
+merge concurrent read-modify-write operations, or coordinate multiple Bot
+processes. Those concerns remain migration requirements for a future SQLite
+storage implementation.

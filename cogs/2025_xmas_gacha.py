@@ -1,6 +1,5 @@
 import asyncio
 import csv
-import json
 import os
 import random
 from dataclasses import dataclass
@@ -10,6 +9,8 @@ from typing import Dict, List, Optional, Tuple
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+from storage.json_store import load_json_or_default, save_json_atomic
 
 try:
     from zoneinfo import ZoneInfo
@@ -73,12 +74,6 @@ class t_reward:
     title: str
     name: str
     desc: str
-
-
-def _ensure_dir() -> None:
-    base = os.path.dirname(STATE_PATH) or DATA_DIR
-    if not os.path.isdir(base):
-        os.makedirs(base, exist_ok=True)
 
 
 def _parse_cutoff() -> datetime:
@@ -178,27 +173,19 @@ def _pick_reward(rewards: List[t_reward]) -> Optional[t_reward]:
 
 
 def _state_read() -> Dict:
-    _ensure_dir()
-    if not os.path.exists(STATE_PATH):
-        return {"orig_nick": {}, "panel_message_id": 0}
-    try:
-        with open(STATE_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if "orig_nick" not in data or not isinstance(data["orig_nick"], dict):
-            data["orig_nick"] = {}
-        if "panel_message_id" not in data:
-            data["panel_message_id"] = 0
-        return data
-    except Exception:
-        return {"orig_nick": {}, "panel_message_id": 0}
+    data = load_json_or_default(
+        STATE_PATH,
+        {"orig_nick": {}, "panel_message_id": 0},
+    )
+    if "orig_nick" not in data or not isinstance(data["orig_nick"], dict):
+        data["orig_nick"] = {}
+    if "panel_message_id" not in data:
+        data["panel_message_id"] = 0
+    return data
 
 
 def _state_write(data: Dict) -> None:
-    _ensure_dir()
-    tmp = STATE_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, STATE_PATH)
+    save_json_atomic(STATE_PATH, data)
 
 
 def _orig_get(data: Dict, gid: int, uid: int) -> Optional[str]:

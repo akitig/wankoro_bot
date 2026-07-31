@@ -1,11 +1,13 @@
-import os
 import json
+import os
 import random
 from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+from storage.json_store import load_json, load_json_or_default, save_json_atomic
 
 
 def _get_int_env(key: str) -> int:
@@ -52,22 +54,20 @@ def _utc_now() -> str:
 
 def _load_json_file(path: str):
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
+        return load_json(path)
+    except (OSError, json.JSONDecodeError):
         return None
 
 
 def _load_intro(path: str):
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        data = load_json(path)
         title = data.get("title")
         text = data.get("text")
         if not isinstance(title, str) or not isinstance(text, str):
             return None
         return title, text
-    except Exception:
+    except (OSError, json.JSONDecodeError, AttributeError):
         return None
 
 
@@ -260,18 +260,10 @@ class ValoCheckCog(commands.Cog):
         return True
 
     def _load_completed(self):
-        try:
-            with open(self.data_path, "r", encoding="utf-8") as f:
-                self.completed = json.load(f)
-        except Exception:
-            self.completed = {}
+        self.completed = load_json_or_default(self.data_path, {})
 
     def _save_completed(self):
-        os.makedirs(os.path.dirname(self.data_path), exist_ok=True)
-        tmp = self.data_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self.completed, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, self.data_path)
+        save_json_atomic(self.data_path, self.completed)
 
     def _calc_roles(self, score: int) -> tuple[bool, bool, str]:
         if score >= self.thresh_gachi_only:
