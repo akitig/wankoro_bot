@@ -60,6 +60,6 @@ token as a validation step.
 
 ## Documentation
 
-- Keep `README.md`, `.env.sample`, dependency files, the systemd template, and
+- Keep `README.md`, `.env.example`, dependency files, the systemd template, and
   runtime-data documentation consistent with the implementation.
 - Mark facts that cannot be verified as unknown rather than guessing.

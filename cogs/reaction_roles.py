@@ -1,7 +1,21 @@
 import os
+import re
 import discord
 from discord.ext import commands
 from discord import app_commands
+
+
+ENV_KEY_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+
+# Discord上のロール名とは分離した、systemd EnvironmentFile互換の設定名。
+GAME_REACTION_ROLES = {
+    "valo": ("VALO民", "RR_GAME_VALO"),
+    "tarkov": ("EFT民", "RR_GAME_EFT"),
+    "st6": ("SF6民", "RR_GAME_SF6"),
+    "mh": ("モンハン民", "RR_GAME_MONSTER_HUNTER"),
+    "ow2": ("OW民", "RR_GAME_OW2"),
+    "apex": ("APEX民", "RR_GAME_APEX"),
+}
 
 
 class ReactionRoles(commands.Cog):
@@ -29,7 +43,12 @@ class ReactionRoles(commands.Cog):
                     emoji_id, role_id = value.split(":")
                     self.reaction_role_map[int(emoji_id)] = int(role_id)
                 except ValueError:
-                    print(f"⚠️ Invalid RR_ format: {key}={value}")
+                    print(f"⚠️ Invalid RR_ format: {key}")
+                if not ENV_KEY_PATTERN.fullmatch(key):
+                    print(
+                        "⚠️ Non-ASCII Reaction Role environment key detected. "
+                        "Migrate it to an RR_GAME_* key for systemd compatibility."
+                    )
         print(f"✅ Reaction roles loaded: {len(self.reaction_role_map)} entries")
 
     # ======================================================
@@ -91,16 +110,7 @@ class ReactionRoles(commands.Cog):
         msg = await interaction.channel.send(embed=embed)
         await interaction.response.send_message("✅ ゲーム選択メッセージを作成しました！", ephemeral=True)
 
-        reaction_map = {
-            "valo": "VALO民",
-            "tarkov": "EFT民",
-            "st6": "SF6民",
-            "mh": "モンハン民",
-            "ow2": "OW民",
-            "apex": "APEX民",
-        }
-
-        for emoji_name in reaction_map:
+        for emoji_name in GAME_REACTION_ROLES:
             emoji = discord.utils.get(guild.emojis, name=emoji_name)
             if emoji:
                 await msg.add_reaction(emoji)
@@ -117,11 +127,11 @@ class ReactionRoles(commands.Cog):
         print(f"REACTION_ROLE_MESSAGE_IDS={','.join(str(x) for x in all_ids)}\n")
 
         print("# Reaction Role 対応表（emoji_id:role_id）")
-        for emoji_name, role_name in reaction_map.items():
+        for emoji_name, (role_name, env_key) in GAME_REACTION_ROLES.items():
             emoji = discord.utils.get(guild.emojis, name=emoji_name)
             role = discord.utils.get(guild.roles, name=role_name)
             if emoji and role:
-                print(f"RR_{role_name.upper()}={emoji.id}:{role.id}")
+                print(f"{env_key}={emoji.id}:{role.id}")
         print()
 
     # ======================================================

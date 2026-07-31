@@ -22,7 +22,7 @@ current production layout.
 | Current path | Class | Mutated by Bot | Contains private data | Current Git state | Proposed destination |
 |---|---|---:|---:|---|---|
 | `.env` | Secret + deployment configuration | No | Yes | Ignored | External secret store or `/etc/wankorobot/wankorobot.env` |
-| `.env.sample` | Configuration example | No | No values | Tracked | `config/examples/wankorobot.env.example` |
+| `.env.example` | Configuration example | No | No values | Tracked | `config/examples/wankorobot.env.example` |
 | `data/valo_questions.json` | Master configuration | No | No known user state | Tracked | `config/valocheck/questions.json` |
 | `data/valo_intro.json` | Master configuration | No | No known user state | Tracked | `config/valocheck/intro.json` |
 | `data/2025_xmas_gacha.csv` | Master configuration | No | No known user state | Tracked | `config/events/2025-xmas/rewards.csv` |
