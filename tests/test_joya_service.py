@@ -89,7 +89,7 @@ def test_normal_ring_updates_state_and_preserves_message(
     asyncio.run(service.handle_joya(interaction))
 
     assert service._get_count_state(guild.id) == (1, False)
-    assert service._store.get_user(guild.id, member.id)["next_ts"] == 1_030
+    assert service._repository.get_user(guild.id, member.id)["next_ts"] == 1_030
     assert interaction.followup.sent == [
         (("**1回目！** ゴーン！ 🔔（次は 30秒）\n（まだ鳴る。まだ戻れる。）",), {})
     ]
@@ -111,7 +111,7 @@ def test_final_ring_assigns_role_and_persists_winner(
 
     asyncio.run(service.handle_joya(interaction))
 
-    state = service._store.get_guild(guild.id)
+    state = service._repository.get_guild(guild.id)
     assert state["count"] == 108
     assert state["finished"] is True
     assert state["winner_user_id"] == member.id

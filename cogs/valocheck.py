@@ -11,15 +11,7 @@ from discord.ext import commands
 
 from config import get_config
 from services.valocheck_service import (
-    DEFAULT_INTRO_TEXT,
-    DEFAULT_INTRO_TITLE,
-    DEFAULT_QUESTIONS,
     ValocheckService,
-    _calc_max_score,
-    _load_intro,
-    _load_json_file,
-    _normalize_questions,
-    _utc_now,
 )
 
 if TYPE_CHECKING:
@@ -148,9 +140,29 @@ class StartView(discord.ui.View):
 class ValoCheckCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        config = get_config()
         self.service = ValocheckService(
             bot,
-            get_config(),
+            guild_id=config.guild_id,
+            role_enjoy_id=config.require_id(
+                config.valo_role_enjoy_id,
+                "ROLE_ENJOY_ID",
+            ),
+            role_gachi_id=config.require_id(
+                config.valo_role_gachi_id,
+                "ROLE_GACHI_ID",
+            ),
+            log_channel_id=config.valo_role_log_channel_id,
+            admin_dm_user_id=config.dm_forward_user_id,
+            view_timeout_sec=config.valo_check_view_timeout_sec,
+            thresh_enjoy_only=config.valo_check_thresh_enjoy_only,
+            thresh_gachi_only=config.valo_check_thresh_gachi_only,
+            label_enjoy=config.valo_check_label_enjoy,
+            label_gachi=config.valo_check_label_gachi,
+            label_both=config.valo_check_label_both,
+            completion_path=config.valo_check_data_path,
+            questions_path=config.valo_check_questions_path,
+            intro_path=config.valo_check_intro_path,
             start_view_factory=lambda user_id, timeout: StartView(
                 self.service,
                 user_id,

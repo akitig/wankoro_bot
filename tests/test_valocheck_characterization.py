@@ -1,11 +1,10 @@
-from pathlib import Path
-
 import pytest
 
 from services.valocheck_service import (
     DEFAULT_QUESTIONS,
     ValocheckService,
     _calc_max_score,
+    _normalize_intro,
     _normalize_questions,
 )
 
@@ -60,12 +59,25 @@ def test_question_scores_are_normalized_and_maximum_is_calculated() -> None:
     assert _calc_max_score(normalized) == 3
 
 
-def test_missing_question_file_uses_built_in_default(tmp_path: Path) -> None:
+def test_missing_question_file_uses_built_in_default() -> None:
+    class RepositoryStub:
+        def load_questions(self) -> None:
+            return None
+
     service = ValocheckService.__new__(ValocheckService)
-    service.questions_path = tmp_path / "missing-questions.json"
+    service._repository = RepositoryStub()
     service.questions = []
     service.max_score = 0
 
     assert service.reload_questions(use_default=True) is True
     assert service.questions is DEFAULT_QUESTIONS
     assert service.max_score == _calc_max_score(DEFAULT_QUESTIONS)
+
+
+def test_intro_raw_data_validation_preserves_fallback_boundary() -> None:
+    assert _normalize_intro({"title": "題", "text": "本文"}) == (
+        "題",
+        "本文",
+    )
+    assert _normalize_intro(None) is None
+    assert _normalize_intro({"title": "題"}) is None

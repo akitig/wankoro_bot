@@ -1,206 +1,146 @@
-import logging
-import random
+"""Discord command and view boundaries for VALORANT map selection."""
 
-import aiohttp
+from __future__ import annotations
+
+import logging
+from typing import Any
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from config import get_config
-from storage.json_store import load_json_or_default, save_json_atomic
-
-logger = logging.getLogger(__name__)
-
-VALO_API_URL = "https://valorant-api.com/v1/maps"
+from services.valomap_service import ValomapService
 
 
 class ValorantMap(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        self.config = get_config()
-        self.cached_maps = []
-        self.banned_maps = set()
-        self.load_bans()
+        config = get_config()
+        self.service = ValomapService(bans_path=config.valomap_bans_path)
 
-    # -------------------------------
-    # 🔹 BANファイルの読み書き
-    # -------------------------------
-    def load_bans(self):
-        data = load_json_or_default(self.config.valomap_bans_path, {"bans": []})
-        self.banned_maps = set(data.get("bans", []))
-        logger.info("VALORANT map bans loaded: count=%d", len(self.banned_maps))
-
-    def save_bans(self):
-        try:
-            save_json_atomic(
-                self.config.valomap_bans_path,
-                {"bans": list(self.banned_maps)},
-            )
-            logger.info("VALORANT map bans saved: count=%d", len(self.banned_maps))
-        except (OSError, TypeError, ValueError):
-            logger.exception("Failed to save VALORANT map bans")
-
-    # -------------------------------
-    # 🔹 マップデータ取得
-    # -------------------------------
-    async def fetch_maps(self):
-        headers = {
-            "User-Agent": "WankoroBot/1.3 (+https://discord.gg/)",
-            "Accept": "application/json"
-        }
-        async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(VALO_API_URL) as resp:
-                if resp.status != 200:
-                    logger.warning(
-                        "VALORANT map API returned non-success status: %d",
-                        resp.status,
-                    )
-                    return []
-                data = await resp.json()
-                return data.get("data", [])
-
-    # -------------------------------
-    # 🔹 コンペマップのみ抽出
-    # -------------------------------
-    async def get_comp_maps(self):
-        if not self.cached_maps:
-            maps = await self.fetch_maps()
-            self.cached_maps = [
-                m for m in maps
-                if (
-                    m.get("isPlayableInCompetitive", False)
-                    or (m.get("tacticalDescription") and not m["displayName"].startswith("Range"))
-                )
-            ]
-            logger.info("VALORANT maps cached: count=%d", len(self.cached_maps))
-        return self.cached_maps
-
-    # -------------------------------
-    # 🔹 /valomap（全マップ表示）
-    # -------------------------------
-    @app_commands.command(name="valomap", description="VALORANTの全コンペマップを表示します（BAN済みは❌）")
-    async def valomap_all(self, interaction: discord.Interaction):
-        maps = await self.get_comp_maps()
-        map_names = [m["displayName"] for m in maps]
-
-        desc = "\n".join(
-            [f"✅ {m}" if m not in self.banned_maps else f"❌ ~~{m}~~" for m in map_names]
+    @app_commands.command(
+        name="valomap",
+        description="VALORANTの全コンペマップを表示します（BAN済みは❌）",
+    )
+    async def valomap_all(self, interaction: discord.Interaction) -> None:
+        listing = await self.service.get_map_listing()
+        description = "\n".join(
+            f"❌ ~~{name}~~" if banned else f"✅ {name}"
+            for name, banned in listing
         )
-
         embed = discord.Embed(
             title="🎯 VALORANT コンペマップ一覧",
-            description=desc,
-            color=0xFF4655
+            description=description,
+            color=0xFF4655,
         )
         await interaction.response.send_message(embed=embed)
 
-    # -------------------------------
-    # 🔹 /valomappool（BANされていないマップのみ）
-    # -------------------------------
-    @app_commands.command(name="valomappool", description="BANされていないVALORANTマップを表示します")
-    async def valomap_pool(self, interaction: discord.Interaction):
-        maps = await self.get_comp_maps()
-        available = [m for m in maps if m["displayName"] not in self.banned_maps]
-
+    @app_commands.command(
+        name="valomappool",
+        description="BANされていないVALORANTマップを表示します",
+    )
+    async def valomap_pool(self, interaction: discord.Interaction) -> None:
+        available = await self.service.get_available_maps()
         if not available:
-            await interaction.response.send_message("❌ 現在、利用可能なマップはありません。", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ 現在、利用可能なマップはありません。", ephemeral=True
+            )
             return
-
-        desc = "\n".join(f"✅ {m['displayName']}" for m in available)
+        description = "\n".join(
+            f"✅ {map_data['displayName']}" for map_data in available
+        )
         embed = discord.Embed(
             title="🎯 現在のVALORANTコンペマッププール（BAN除外）",
-            description=desc,
-            color=0x00BFFF
+            description=description,
+            color=0x00BFFF,
         )
         await interaction.response.send_message(embed=embed)
 
-    # -------------------------------
-    # 🔹 /valomapselect
-    # -------------------------------
-    @app_commands.command(name="valomapselect", description="BANされていないマップからランダムに選びます")
-    async def valomap_select(self, interaction: discord.Interaction):
-        maps = await self.get_comp_maps()
-        available = [m for m in maps if m["displayName"] not in self.banned_maps]
-
-        if not available:
-            await interaction.response.send_message("❌ 利用可能なマップがありません。BANを解除してください。")
+    @app_commands.command(
+        name="valomapselect",
+        description="BANされていないマップからランダムに選びます",
+    )
+    async def valomap_select(self, interaction: discord.Interaction) -> None:
+        selected = await self.service.select_random_map()
+        if selected is None:
+            await interaction.response.send_message(
+                "❌ 利用可能なマップがありません。BANを解除してください。"
+            )
             return
-
-        selected = random.choice(available)
         name = selected["displayName"]
         image = selected.get("splash")
-
         embed = discord.Embed(
             title="🎲 ランダム選出マップ",
             description=f"**{name}** が選ばれました！",
-            color=0xFF4655
+            color=0xFF4655,
         )
         if image:
             embed.set_image(url=image)
         await interaction.response.send_message(embed=embed)
 
-    # ==================================================
-    # 🔹 BANドロップダウンUI
-    # ==================================================
     class MapBanDropdown(discord.ui.Select):
-        def __init__(self, cog, maps):
-            self.cog = cog
+        def __init__(self, service: ValomapService, maps: list[dict[str, Any]]) -> None:
+            self.service = service
             options = [
-                discord.SelectOption(label=m["displayName"], description="BANするマップを選択")
-                for m in maps
-                if m["displayName"] not in cog.banned_maps
+                discord.SelectOption(
+                    label=map_data["displayName"],
+                    description="BANするマップを選択",
+                )
+                for map_data in maps
+                if not service.is_banned(map_data["displayName"])
             ]
-            super().__init__(placeholder="BANするマップを選んでください", options=options, min_values=1, max_values=1)
+            super().__init__(
+                placeholder="BANするマップを選んでください",
+                options=options,
+                min_values=1,
+                max_values=1,
+            )
 
-        async def callback(self, interaction: discord.Interaction):
+        async def callback(self, interaction: discord.Interaction) -> None:
             selected = self.values[0]
-            self.cog.banned_maps.add(selected)
-            self.cog.save_bans()
+            self.service.ban_map(selected)
             await interaction.response.edit_message(
                 content=f"🚫 `{selected}` をBANしました。",
-                view=None
+                view=None,
             )
 
     class MapBanView(discord.ui.View):
-        def __init__(self, cog, maps):
+        def __init__(self, service: ValomapService, maps: list[dict[str, Any]]) -> None:
             super().__init__(timeout=60)
-            self.add_item(ValorantMap.MapBanDropdown(cog, maps))
+            self.add_item(ValorantMap.MapBanDropdown(service, maps))
 
-    # -------------------------------
-    # 🔹 /valomapban（UI式BAN）
-    # -------------------------------
-    @app_commands.command(name="valomapban", description="ドロップダウンでBANするマップを選びます")
-    async def valomap_ban_ui(self, interaction: discord.Interaction):
-        maps = await self.get_comp_maps()
-        available = [m for m in maps if m["displayName"] not in self.banned_maps]
-
+    @app_commands.command(
+        name="valomapban",
+        description="ドロップダウンでBANするマップを選びます",
+    )
+    async def valomap_ban_ui(self, interaction: discord.Interaction) -> None:
+        available = await self.service.get_available_maps()
         if not available:
-            await interaction.response.send_message("❌ すべてのマップがBAN済みです。", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ すべてのマップがBAN済みです。", ephemeral=True
+            )
             return
+        view = ValorantMap.MapBanView(self.service, available)
+        await interaction.response.send_message(
+            "BANするマップを選んでください：", view=view, ephemeral=True
+        )
 
-        view = ValorantMap.MapBanView(self, available)
-        await interaction.response.send_message("BANするマップを選んでください：", view=view, ephemeral=True)
-
-    # -------------------------------
-    # 🔹 /valomapclear
-    # -------------------------------
     @app_commands.command(name="valomapclear", description="すべてのBANを解除します")
-    async def valomap_clear(self, interaction: discord.Interaction):
-        self.banned_maps.clear()
-        self.save_bans()
+    async def valomap_clear(self, interaction: discord.Interaction) -> None:
+        self.service.clear_bans()
         await interaction.response.send_message("✅ すべてのマップBANを解除しました。")
 
-    # -------------------------------
-    # 🔹 /valocustom（コマンド一覧ヘルプ）
-    # -------------------------------
-    @app_commands.command(name="valocustom", description="VALORANTマップ関連コマンド一覧を表示します")
-    async def valomap_help(self, interaction: discord.Interaction):
+    @app_commands.command(
+        name="valocustom",
+        description="VALORANTマップ関連コマンド一覧を表示します",
+    )
+    async def valomap_help(self, interaction: discord.Interaction) -> None:
         embed = discord.Embed(
             title="🎮 VALORANT マップ管理コマンド一覧",
             description="わんころBot🐶 のVALORANT用マップ管理コマンドです。",
-            color=0xFFD700
+            color=0xFFD700,
         )
-
         commands_info = [
             ("/valomap", "全マップ一覧を表示（BAN済みは❌打消し線付き）"),
             ("/valomappool", "BANされていないマップのみを表示"),
@@ -209,22 +149,16 @@ class ValorantMap(commands.Cog):
             ("/valomapclear", "全てのBANを解除"),
             ("/valocustom", "このコマンド一覧を表示します"),
         ]
-
-        for name, desc in commands_info:
-            embed.add_field(name=name, value=desc, inline=False)
-
+        for name, description in commands_info:
+            embed.add_field(name=name, value=description, inline=False)
         embed.set_footer(text="Powered by わんころBot🐶")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @commands.Cog.listener()
-    async def on_ready(self):
-        if not self.cached_maps:
-            await self.get_comp_maps()
+    async def on_ready(self) -> None:
+        await self.service.initialize()
 
 
-# -------------------------------
-# 🔹 Cog登録
-# -------------------------------
-async def setup(bot):
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(ValorantMap(bot))
-    logger.info("VALORANT map Cog initialized")
+    logging.getLogger(__name__).info("VALORANT map Cog initialized")

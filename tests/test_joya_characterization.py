@@ -4,12 +4,14 @@ from pathlib import Path
 
 import pytest
 
+from repositories.joya_repository import JoyaRepository
+
 joya = importlib.import_module("services.joya_service")
 
 
-def _service_with_store(path: Path):
+def _service_with_repository(path: Path):
     service = joya.JoyaService.__new__(joya.JoyaService)
-    service._store = joya._JoyaStore(path)
+    service._repository = JoyaRepository(path)
     service._min_env = 60
     service._max_env = 300
     return service
@@ -17,17 +19,16 @@ def _service_with_store(path: Path):
 
 def test_initial_and_saved_state_structure(tmp_path: Path) -> None:
     path = tmp_path / "joya.json"
-    service = _service_with_store(path)
-    store = service._store
+    service = _service_with_repository(path)
+    repository = service._repository
 
-    assert store._data == {"guilds": {}, "users": {}}
     assert service._get_count_state(10) == (0, False)
-    assert store.get_guild(10) == {}
-    assert store.get_user(10, 20) == {}
+    assert repository.get_guild(10) == {}
+    assert repository.get_user(10, 20) == {}
 
-    store.get_guild(10)["count"] = 1
-    store.get_user(10, 20)["next_ts"] = 1234
-    store.save()
+    repository.get_guild(10)["count"] = 1
+    repository.get_user(10, 20)["next_ts"] = 1234
+    repository.save()
 
     assert json.loads(path.read_text(encoding="utf-8")) == {
         "guilds": {"10": {"count": 1}},
@@ -68,7 +69,7 @@ def test_cooldown_remaining_boundaries(
 ) -> None:
     now = 1_000
     monkeypatch.setattr(joya, "_now_ts", lambda: now)
-    service = _service_with_store(tmp_path / "joya.json")
+    service = _service_with_repository(tmp_path / "joya.json")
 
     service._set_cooldown(10, 20, 30)
 
@@ -82,7 +83,7 @@ def test_cooldown_remaining_boundaries(
 def test_winner_state_persistence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "joya.json"
     monkeypatch.setattr(joya, "_now_ts", lambda: 1_234_567)
-    service = _service_with_store(path)
+    service = _service_with_repository(path)
 
     service._set_count_state(10, 108, True, winner_id=20)
 
@@ -100,15 +101,15 @@ def test_winner_state_persistence(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
 
 def test_reset_removes_only_target_guild_state(tmp_path: Path) -> None:
-    store = joya._JoyaStore(tmp_path / "joya.json")
-    store.get_guild(10)["count"] = 5
-    store.get_guild(11)["count"] = 6
-    store.get_user(10, 20)["next_ts"] = 100
-    store.get_user(10, 21)["next_ts"] = 200
-    store.get_user(11, 20)["next_ts"] = 300
+    repository = JoyaRepository(tmp_path / "joya.json")
+    repository.get_guild(10)["count"] = 5
+    repository.get_guild(11)["count"] = 6
+    repository.get_user(10, 20)["next_ts"] = 100
+    repository.get_user(10, 21)["next_ts"] = 200
+    repository.get_user(11, 20)["next_ts"] = 300
 
-    assert store.reset_guild_all(10) == 2
-    assert store._data == {
+    assert repository.reset_guild_users(10) == 2
+    assert json.loads((tmp_path / "joya.json").read_text(encoding="utf-8")) == {
         "guilds": {"10": {}, "11": {"count": 6}},
         "users": {"11:20": {"next_ts": 300}},
     }
