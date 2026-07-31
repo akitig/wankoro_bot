@@ -73,6 +73,8 @@ StateDirectoryMode=0700
 
 system-level Unitでは保存先が `/var/lib/wankoro-bot` となり、systemdが
 `User=akitig`（Group未指定ならprimary group）で書き込めるよう管理します。
+この指定によりsystemdは絶対パスを `STATE_DIRECTORY` としてプロセスへ渡し、Configは
+その値を加工せずruntime rootとして使用します。コード側で `/var/lib` を再構築しません。
 推奨構成は次のとおりです。
 
 ```text
@@ -92,9 +94,9 @@ directory modeは `0700`、JSONは新規作成時 `0600` を推奨します。�
 user serviceでは妥当です。ただし現行はsystem-level serviceなので、本番の第一候補
 にはしません。案Aは緊急override、段階移行、複数instanceの明示分離に適しています。
 
-## 将来のConfig変更案
+## Configの保存先解決
 
-コード対応PRでは、既存の個別path設定を壊さず、次の優先順位でruntime rootを解決します。
+Configは、既存の個別path設定を壊さず、次の優先順位でruntime rootを解決します。
 
 1. 明示的な `RUNTIME_DATA_DIR`
 2. systemdが `StateDirectory=` から提供する `STATE_DIRECTORY`
@@ -103,7 +105,7 @@ user serviceでは妥当です。ただし現行はsystem-level serviceなので
 
 個別設定 `VALO_CHECK_DATA_PATH`、`OMIKUJI_POINTS_PATH`、`JOYA_DATA_PATH`、
 `XMAS_GACHA_STATE` が設定されている場合は、後方互換のためroot派生値より優先します。
-Valomapには同じrootから派生するConfig pathを追加します。master dataの
+Valomapには `VALOMAP_BANS_PATH` overrideと同じrootから派生するConfig pathを追加します。master dataの
 `VALO_CHECK_QUESTIONS_PATH`、`VALO_CHECK_INTRO_PATH`、`XMAS_GACHA_CSV` はruntime rootへ
 移しません。
 

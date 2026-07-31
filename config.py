@@ -17,6 +17,39 @@ logger = logging.getLogger(__name__)
 PRODUCTION_DATA_DIR = Path("/home/akitig/Desktop/Bot/Toureikai/Wankorobot/data")
 
 
+def resolve_runtime_data_dir(
+    environ: Mapping[str, str],
+    home: Path,
+) -> Path:
+    """Resolve the directory containing mutable application state."""
+
+    for name in ("RUNTIME_DATA_DIR", "STATE_DIRECTORY"):
+        value = environ.get(name)
+        if value is not None and value.strip():
+            return Path(value.strip())
+
+    xdg_data_home = environ.get("XDG_DATA_HOME")
+    if xdg_data_home is not None and xdg_data_home.strip():
+        return Path(xdg_data_home.strip()) / "wankoro-bot"
+    return home / ".local" / "share" / "wankoro-bot"
+
+
+def resolve_runtime_path(
+    *,
+    explicit_value: str | None,
+    runtime_dir: Path,
+    filename: str,
+    strip: bool = False,
+) -> Path:
+    """Prefer an explicitly configured path, otherwise use ``runtime_dir``."""
+
+    if explicit_value is not None:
+        value = explicit_value.strip() if strip else explicit_value
+        if value:
+            return Path(value)
+    return runtime_dir / filename
+
+
 def _optional_int(name: str) -> int | None:
     value = os.getenv(name)
     if not value:
@@ -42,11 +75,6 @@ def _string_with_default(name: str, default: str, *, strip: bool = False) -> str
     if value is None or (not strip and not value) or (strip and not value.strip()):
         return default
     return value.strip() if strip else value
-
-
-def _string_if_missing(name: str, default: str) -> str:
-    value = os.getenv(name)
-    return default if value is None else value
 
 
 def _required_int(name: str) -> int:
@@ -133,6 +161,7 @@ class Config:
 
 def _load_config() -> Config:
     load_dotenv()
+    runtime_data_dir = resolve_runtime_data_dir(os.environ, Path.home())
     return Config(
         discord_token=os.getenv("DISCORD_TOKEN"),
         application_id=_required_int("APPLICATION_ID"),
@@ -154,12 +183,11 @@ def _load_config() -> Config:
                 strip=True,
             )
         ),
-        xmas_gacha_state_path=Path(
-            _string_with_default(
-                "XMAS_GACHA_STATE",
-                str(PRODUCTION_DATA_DIR / "xmas_gacha_state.json"),
-                strip=True,
-            )
+        xmas_gacha_state_path=resolve_runtime_path(
+            explicit_value=os.getenv("XMAS_GACHA_STATE"),
+            runtime_dir=runtime_data_dir,
+            filename="xmas_gacha_state.json",
+            strip=True,
         ),
         xmas_gacha_channel_id=_int_with_default("XMAS_GACHA_CHANNEL_ID", 0),
         xmas_gacha_cutoff=_string_with_default(
@@ -167,27 +195,33 @@ def _load_config() -> Config:
             "2025-12-26T07:00:00+09:00",
             strip=True,
         ),
-        joya_data_path=Path(_string_if_missing("JOYA_DATA_PATH", "./data/joya_state.json")),
+        joya_data_path=resolve_runtime_path(
+            explicit_value=os.getenv("JOYA_DATA_PATH"),
+            runtime_dir=runtime_data_dir,
+            filename="2026_joya_state.json",
+        ),
         joya_min_sec=_int_with_default("JOYA_MIN_SEC", 60),
         joya_max_sec=_int_with_default("JOYA_MAX_SEC", 300),
         joya_winner_role_id=_int_with_default("JOYA_WINNER_ROLE_ID", 0),
         joya_channel_id=_int_with_default("JOYA_CHANNEL_ID", 0),
-        omikuji_points_path=Path(
-            _string_with_default(
-                "OMIKUJI_POINTS_PATH",
-                "data/2026_omikujii_points.json",
-                strip=True,
-            )
+        omikuji_points_path=resolve_runtime_path(
+            explicit_value=os.getenv("OMIKUJI_POINTS_PATH"),
+            runtime_dir=runtime_data_dir,
+            filename="2026_omikujii_points.json",
+            strip=True,
         ),
         omikuji_rest_vc_id=_int_with_default("OMIKUJI_REST_VC_ID", 0),
         omikuji_resetter_user_id=_int_with_default("OMIKUJI_RESETTER_USER_ID", 0),
         omikuji_panel_channel_id=_int_with_default("OMIKUJI_PANEL_CHANNEL_ID", 0),
-        valomap_bans_path=Path("valomap_bans.json"),
-        valo_check_data_path=Path(
-            _string_with_default(
-                "VALO_CHECK_DATA_PATH",
-                "data/valo_check_completed.json",
-            )
+        valomap_bans_path=resolve_runtime_path(
+            explicit_value=os.getenv("VALOMAP_BANS_PATH"),
+            runtime_dir=runtime_data_dir,
+            filename="valomap_bans.json",
+        ),
+        valo_check_data_path=resolve_runtime_path(
+            explicit_value=os.getenv("VALO_CHECK_DATA_PATH"),
+            runtime_dir=runtime_data_dir,
+            filename="valo_check_completed.json",
         ),
         valo_check_questions_path=Path(
             _string_with_default(

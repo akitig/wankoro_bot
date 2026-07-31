@@ -20,33 +20,42 @@ from being attempted.
 | Discord process | `DISCORD_TOKEN`, `APPLICATION_ID`, `GUILD_ID`, `LOG_LEVEL` |
 | Welcome and moderation | `ADMIN_ID`, `MANAGER_ROLE_IDS`, `ROLE_A`, `ROLE_B`, `ROLE_C`, `LEAVE_LOG_CHANNEL_ID`, `DM_FORWARD_USER_ID` |
 | Reaction Roles | `REACTION_ROLE_MESSAGE_IDS`, every `RR_*` mapping |
-| VALORANT check | `ROLE_ENJOY_ID`, `ROLE_GACHI_ID`, `VALO_ROLE_LOG_CHANNEL_ID`, `VALO_CHECK_VIEW_TIMEOUT_SEC`, `VALO_CHECK_DATA_PATH`, `VALO_CHECK_QUESTIONS_PATH`, `VALO_CHECK_INTRO_PATH`, `VALO_CHECK_THRESH_ENJOY_ONLY`, `VALO_CHECK_THRESH_GACHI_ONLY`, `VALO_CHECK_LABEL_ENJOY`, `VALO_CHECK_LABEL_GACHI`, `VALO_CHECK_LABEL_BOTH` |
+| Runtime storage | `RUNTIME_DATA_DIR`, systemd-provided `STATE_DIRECTORY`, `XDG_DATA_HOME` |
+| VALORANT check | `ROLE_ENJOY_ID`, `ROLE_GACHI_ID`, `VALO_ROLE_LOG_CHANNEL_ID`, `VALO_CHECK_VIEW_TIMEOUT_SEC`, `VALO_CHECK_DATA_PATH`, `VALOMAP_BANS_PATH`, `VALO_CHECK_QUESTIONS_PATH`, `VALO_CHECK_INTRO_PATH`, `VALO_CHECK_THRESH_ENJOY_ONLY`, `VALO_CHECK_THRESH_GACHI_ONLY`, `VALO_CHECK_LABEL_ENJOY`, `VALO_CHECK_LABEL_GACHI`, `VALO_CHECK_LABEL_BOTH` |
 | VALORANT recruit | `VALO_RECRUIT_CHANNEL_ID`, `VALO_ROLE_GACHI_ID`, `VALO_ROLE_ENJOY_ID`, `VALO_RECRUIT_COOLDOWN_SECONDS` |
 | Christmas event | `XMAS_GACHA_CSV`, `XMAS_GACHA_STATE`, `XMAS_GACHA_CHANNEL_ID`, `XMAS_GACHA_CUTOFF` |
 | New Year bell event | `JOYA_DATA_PATH`, `JOYA_MIN_SEC`, `JOYA_MAX_SEC`, `JOYA_WINNER_ROLE_ID`, `JOYA_CHANNEL_ID` |
 | Omikuji event | `OMIKUJI_POINTS_PATH`, `OMIKUJI_REST_VC_ID`, `OMIKUJI_RESETTER_USER_ID`, `OMIKUJI_PANEL_CHANNEL_ID` |
 
-`valomap_bans.json` has no environment override and remains at its existing
-working-directory-relative path.
+Mutable runtime paths use an explicitly configured feature path first. Otherwise,
+their root is resolved in this order: `RUNTIME_DATA_DIR`, `STATE_DIRECTORY`,
+`XDG_DATA_HOME/wankoro-bot`, then `~/.local/share/wankoro-bot`. Empty root values
+are ignored and surrounding whitespace is removed. `STATE_DIRECTORY` is the
+absolute path supplied by systemd and is used directly; Config does not rebuild
+it below `/var/lib`.
+
+Existing feature-specific path whitespace behavior is preserved. Omikuji and
+Xmas paths are stripped; Joya and VALORANT check paths remain literal. An empty
+feature path is treated as unset. `VALOMAP_BANS_PATH` provides the same override
+for Valomap while retaining relative paths as working-directory-relative.
 
 ## Runtime and master-data paths
 
 All JSON and CSV paths exposed through Config use `pathlib.Path`.
 
-| Config field | Existing default |
+| Config field | Runtime-root filename |
 |---|---|
 | `valomap_bans_path` | `valomap_bans.json` |
-| `valo_check_data_path` | `data/valo_check_completed.json` |
+| `valo_check_data_path` | `valo_check_completed.json` |
 | `valo_check_questions_path` | `data/valo_questions.json` |
 | `valo_check_intro_path` | `data/valo_intro.json` |
 | `xmas_gacha_csv_path` | `/home/akitig/Desktop/Bot/Toureikai/Wankorobot/data/2025_xmas_gacha.csv` |
-| `xmas_gacha_state_path` | `/home/akitig/Desktop/Bot/Toureikai/Wankorobot/data/xmas_gacha_state.json` |
-| `joya_data_path` | `data/joya_state.json` |
-| `omikuji_points_path` | `data/2026_omikujii_points.json` |
+| `xmas_gacha_state_path` | `xmas_gacha_state.json` |
+| `joya_data_path` | `2026_joya_state.json` |
+| `omikuji_points_path` | `2026_omikujii_points.json` |
 
-The current `JOYA_DATA_PATH` default does not match the tracked
-`data/2026_joya_state.json` filename. That pre-existing deployment distinction
-is documented rather than changed in this refactor.
+Resolving Config paths only constructs `Path` values. It does not create the
+runtime directory or any JSON file.
 
 ## Logging
 
