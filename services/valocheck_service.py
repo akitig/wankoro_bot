@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import random
 from collections.abc import Callable
@@ -12,7 +11,7 @@ from typing import Any
 import discord
 
 from config import Config
-from storage.json_store import load_json, load_json_or_default, save_json_atomic
+from repositories.valocheck_repository import ValocheckRepository
 
 logger = logging.getLogger(__name__)
 
@@ -42,23 +41,14 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _load_json_file(path: str) -> Any:
-    try:
-        return load_json(path)
-    except (OSError, json.JSONDecodeError):
+def _normalize_intro(data: Any) -> tuple[str, str] | None:
+    if not isinstance(data, dict):
         return None
-
-
-def _load_intro(path: str) -> tuple[str, str] | None:
-    try:
-        data = load_json(path)
-        title = data.get("title")
-        text = data.get("text")
-        if not isinstance(title, str) or not isinstance(text, str):
-            return None
-        return title, text
-    except (OSError, json.JSONDecodeError, AttributeError):
+    title = data.get("title")
+    text = data.get("text")
+    if not isinstance(title, str) or not isinstance(text, str):
         return None
+    return title, text
 
 
 def _normalize_questions(qs: Any) -> list[dict[str, Any]] | None:
@@ -116,8 +106,6 @@ class ValocheckService:
         self.log_channel_id = config.valo_role_log_channel_id
         self.admin_dm_user_id = config.dm_forward_user_id
         self.view_timeout_sec = config.valo_check_view_timeout_sec
-        self.data_path = config.valo_check_data_path
-        self.questions_path = config.valo_check_questions_path
         self.thresh_enjoy_only = config.valo_check_thresh_enjoy_only
         self.thresh_gachi_only = config.valo_check_thresh_gachi_only
         self.label_enjoy = config.valo_check_label_enjoy
@@ -125,8 +113,13 @@ class ValocheckService:
         self.label_both = config.valo_check_label_both
         self._start_view_factory = start_view_factory
         self._quiz_view_factory = quiz_view_factory
+        self._repository = ValocheckRepository(
+            completion_path=config.valo_check_data_path,
+            questions_path=config.valo_check_questions_path,
+            intro_path=config.valo_check_intro_path,
+        )
 
-        intro = _load_intro(config.valo_check_intro_path)
+        intro = _normalize_intro(self._repository.load_intro())
         if intro is None:
             self.intro_title = DEFAULT_INTRO_TITLE
             self.intro_text = DEFAULT_INTRO_TEXT
@@ -137,12 +130,10 @@ class ValocheckService:
         self.max_score = 0
         self.reload_questions(use_default=True)
         self.sessions: dict[int, dict[str, Any]] = {}
-        self.completed: dict[str, dict[str, Any]] = load_json_or_default(
-            self.data_path, {}
-        )
+        self._repository.load()
 
     def reload_questions(self, *, use_default: bool = False) -> bool:
-        normalized = _normalize_questions(_load_json_file(self.questions_path))
+        normalized = _normalize_questions(self._repository.load_questions())
         if normalized is None and use_default:
             self.questions = DEFAULT_QUESTIONS
         elif normalized is None:
@@ -176,7 +167,7 @@ class ValocheckService:
     ) -> str:
         if member.bot:
             return "Botは対象にできません。"
-        if str(member.id) in self.completed and not force:
+        if self._repository.has_completion(member.id) and not force:
             return "このメンバーは既に診断済みです。"
         if member.id in self.sessions:
             return "このメンバーは現在診断中です。"
@@ -393,7 +384,7 @@ class ValocheckService:
             return
 
         await self._deliver_result(user, session, score, label)
-        self.completed[str(member.id)] = {
+        completion = {
             "completed_at": _utc_now(),
             "score": score,
             "max_score": self.max_score,
@@ -404,7 +395,7 @@ class ValocheckService:
             "forced": bool(session.get("forced")),
             "force_enjoy": bool(session.get("force_enjoy")),
         }
-        save_json_atomic(self.data_path, self.completed)
+        self._repository.save_completion(member.id, completion)
         await self._log_to_channel(guild, member, score, label, session)
 
     async def _deliver_result(

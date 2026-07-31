@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from pathlib import Path
 
 import pytest
 
@@ -15,16 +14,23 @@ from tests.helpers.discord_fakes import (
 )
 
 
-def _service(
-    guild: FakeGuild | None = None,
-    *,
-    data_path: Path | None = None,
-) -> ValocheckService:
+class RepositoryStub:
+    def __init__(self) -> None:
+        self.completions: dict[str, dict] = {}
+
+    def has_completion(self, member_id: int) -> bool:
+        return str(member_id) in self.completions
+
+    def save_completion(self, member_id: int, completion: dict) -> None:
+        self.completions[str(member_id)] = dict(completion)
+
+
+def _service(guild: FakeGuild | None = None) -> ValocheckService:
     service = ValocheckService.__new__(ValocheckService)
     service.bot = FakeBot(guild)
     service.guild_id = guild.id if guild else 100
     service.sessions = {}
-    service.completed = {}
+    service._repository = RepositoryStub()
     service.questions = [
         {"q": "Q1", "choices": [("A", 0), ("B", 1)]},
         {"q": "Q2", "choices": [("A", 0), ("B", 1)]},
@@ -40,7 +46,6 @@ def _service(
     service.label_both = "Both"
     service.log_channel_id = None
     service.admin_dm_user_id = None
-    service.data_path = data_path or Path("/invalid/test-only.json")
     return service
 
 
@@ -62,6 +67,18 @@ def test_normal_diagnosis_creates_session() -> None:
     assert message == f"{member.mention} にDMで診断を送りました。"
     assert service.sessions[member.id]["idx"] == -1
     assert service.sessions[member.id]["force_enjoy"] is False
+
+
+def test_completed_check_is_delegated_to_repository() -> None:
+    member = FakeMember(500)
+    service = _service()
+    service._repository.completions[str(member.id)] = {"score": 1}
+
+    message = asyncio.run(
+        service.diagnose(member, invoked_by=FakeMember(600), force=False)
+    )
+
+    assert message == "このメンバーは既に診断済みです。"
 
 
 def test_cog_defers_then_delegates_and_uses_followup() -> None:
@@ -113,14 +130,12 @@ def test_last_questions_zero_score_sets_force_enjoy_and_finalizes() -> None:
     assert member.id not in service.sessions
 
 
-def test_finalize_replaces_roles_and_applies_force_enjoy(
-    tmp_path: Path,
-) -> None:
+def test_finalize_replaces_roles_and_applies_force_enjoy() -> None:
     enjoy = FakeRole(801, "Enjoy")
     gachi = FakeRole(802, "Gachi")
     member = FakeMember(500, roles=[enjoy, gachi])
     guild = FakeGuild(guild_id=100, roles=[enjoy, gachi], members=[member])
-    service = _service(guild, data_path=tmp_path / "completed.json")
+    service = _service(guild)
 
     async def no_log(*args):
         return None
@@ -138,8 +153,9 @@ def test_finalize_replaces_roles_and_applies_force_enjoy(
 
     assert member.removed_roles == [(enjoy, gachi)]
     assert member.added_roles == [(enjoy,)]
-    assert service.completed[str(member.id)]["result"] == "Enjoy"
-    assert service.completed[str(member.id)]["force_enjoy"] is True
+    completion = service._repository.completions[str(member.id)]
+    assert completion["result"] == "Enjoy"
+    assert completion["force_enjoy"] is True
 
 
 def test_missing_role_notifies_user_without_completed_data() -> None:
@@ -159,7 +175,7 @@ def test_missing_role_notifies_user_without_completed_data() -> None:
     assert member.sent[0][0] == (
         "ロールID設定が正しくないみたい。運営に連絡してね。",
     )
-    assert service.completed == {}
+    assert service._repository.completions == {}
 
 
 def test_role_api_failure_is_logged_without_member_name(
@@ -182,7 +198,24 @@ def test_role_api_failure_is_logged_without_member_name(
 
     assert "Failed to update diagnostic roles" in caplog.text
     assert member.name not in caplog.text
-    assert service.completed == {}
+    assert service._repository.completions == {}
+
+
+def test_completion_repository_error_keeps_existing_propagation() -> None:
+    enjoy = FakeRole(801, "Enjoy")
+    gachi = FakeRole(802, "Gachi")
+    member = FakeMember(500)
+    guild = FakeGuild(guild_id=100, roles=[enjoy, gachi], members=[member])
+    service = _service(guild)
+
+    class FailingRepository(RepositoryStub):
+        def save_completion(self, member_id: int, completion: dict) -> None:
+            raise OSError("save failed")
+
+    service._repository = FailingRepository()
+
+    with pytest.raises(OSError, match="save failed"):
+        asyncio.run(service._finalize(member, {"score": 0, "answers": []}))
 
 
 def test_command_metadata_permission_check_and_view_timeout_are_stable() -> None:
