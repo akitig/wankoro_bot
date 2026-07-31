@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from cogs.reaction_roles import GAME_REACTION_ROLES, ReactionRoles
+from services.reaction_role_service import ReactionRoleService
 from tests.helpers.discord_fakes import (
     FakeBot,
     FakeEmoji,
@@ -23,6 +24,12 @@ def _cog(*, member: FakeMember, role: FakeRole | None = None) -> ReactionRoles:
     cog.GUILD_ID = guild.id
     cog.REACTION_ROLE_MESSAGE_IDS = {200}
     cog.reaction_role_map = {300: 400}
+    cog.service = ReactionRoleService(
+        cog.bot,
+        guild_id=cog.GUILD_ID,
+        message_ids=cog.REACTION_ROLE_MESSAGE_IDS,
+        reaction_role_map=cog.reaction_role_map,
+    )
     return cog
 
 

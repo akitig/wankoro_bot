@@ -5,6 +5,7 @@ from discord.ext import commands
 from discord import app_commands
 
 from config import get_config
+from services.reaction_role_service import ReactionRoleService
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,12 @@ class ReactionRoles(commands.Cog):
 
         self.reaction_role_map = {}
         self.load_reaction_roles()
+        self.service = ReactionRoleService(
+            bot,
+            guild_id=self.GUILD_ID,
+            message_ids=self.REACTION_ROLE_MESSAGE_IDS,
+            reaction_role_map=self.reaction_role_map,
+        )
 
     # ======================================================
     # ✅ .env 読み込み
@@ -59,38 +66,7 @@ class ReactionRoles(commands.Cog):
     # ✅ ロール操作共通処理
     # ======================================================
     async def handle_reaction(self, payload, add=True):
-        if payload.message_id not in self.REACTION_ROLE_MESSAGE_IDS:
-            return
-        if payload.user_id == self.bot.user.id:
-            return
-
-        guild = self.bot.get_guild(self.GUILD_ID)
-        if not guild:
-            return
-
-        member = guild.get_member(payload.user_id)
-        if not member:
-            return
-
-        emoji_id = payload.emoji.id if payload.emoji.is_custom_emoji() else None
-        role_id = self.reaction_role_map.get(emoji_id)
-        if not role_id:
-            return
-
-        role = guild.get_role(role_id)
-        if not role:
-            return
-
-        try:
-            if add:
-                await member.add_roles(role)
-                logger.info("Reaction Role assigned")
-            else:
-                await member.remove_roles(role)
-                logger.info("Reaction Role removed")
-        except Exception:
-            logger.exception("Reaction Role operation failed")
-            raise
+        await self.service.handle_reaction(payload, add=add)
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):

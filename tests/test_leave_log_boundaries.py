@@ -71,7 +71,7 @@ def test_missing_notification_channel_logs_warning_without_member(
     with caplog.at_level(logging.WARNING):
         asyncio.run(cog.on_member_remove(member))
 
-    assert "Leave notification channel is unavailable" in caplog.text
+    assert "Leave log channel is unavailable" in caplog.text
     assert member.name not in caplog.text
 
 

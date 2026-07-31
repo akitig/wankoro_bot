@@ -76,6 +76,14 @@ class FakeChannel:
         self.sent.append((args, kwargs))
         return FakeSentMessage()
 
+    def permissions_for(self, member: Any) -> SimpleNamespace:
+        return SimpleNamespace(
+            view_channel=True,
+            send_messages=True,
+            embed_links=True,
+            manage_messages=True,
+        )
+
 
 class FakeGuild:
     def __init__(
