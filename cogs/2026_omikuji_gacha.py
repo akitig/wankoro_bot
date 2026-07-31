@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import random
 from dataclasses import dataclass
 from typing import Dict, Optional
@@ -9,6 +10,8 @@ from discord.ext import commands
 
 from config import get_config
 from storage.json_store import load_json_or_default, save_json_atomic
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -141,7 +144,7 @@ class OmikujiGachaCog(commands.Cog):
             try:
                 await self._tick_vc_points()
             except Exception:
-                pass
+                logger.exception("Omikuji VC point update failed")
             await asyncio.sleep(60)
 
     async def _tick_vc_points(self) -> None:

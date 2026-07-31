@@ -1,9 +1,12 @@
+import logging
 import re
 import discord
 from discord.ext import commands
 from discord import app_commands
 
 from config import get_config
+
+logger = logging.getLogger(__name__)
 
 ENV_KEY_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
@@ -42,13 +45,15 @@ class ReactionRoles(commands.Cog):
                     emoji_id, role_id = value.split(":")
                     self.reaction_role_map[int(emoji_id)] = int(role_id)
                 except ValueError:
-                    print(f"⚠️ Invalid RR_ format: {key}")
+                    logger.warning("Invalid Reaction Role configuration: key=%s", key)
                 if not ENV_KEY_PATTERN.fullmatch(key):
-                    print(
-                        "⚠️ Non-ASCII Reaction Role environment key detected. "
-                        "Migrate it to an RR_GAME_* key for systemd compatibility."
+                    logger.warning(
+                        "Non-ASCII Reaction Role environment key detected"
                     )
-        print(f"✅ Reaction roles loaded: {len(self.reaction_role_map)} entries")
+        logger.info(
+            "Reaction Role configuration loaded: count=%d",
+            len(self.reaction_role_map),
+        )
 
     # ======================================================
     # ✅ ロール操作共通処理
@@ -78,10 +83,10 @@ class ReactionRoles(commands.Cog):
 
         if add:
             await member.add_roles(role)
-            print(f"✅ Added {role.name} → {member.display_name}")
+            logger.info("Reaction Role assigned")
         else:
             await member.remove_roles(role)
-            print(f"🗑 Removed {role.name} → {member.display_name}")
+            logger.info("Reaction Role removed")
 
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload):
@@ -113,25 +118,13 @@ class ReactionRoles(commands.Cog):
             emoji = discord.utils.get(guild.emojis, name=emoji_name)
             if emoji:
                 await msg.add_reaction(emoji)
-                print(f"✅ Added :{emoji_name}:")
+                logger.debug("Reaction added to game-role message: %s", emoji_name)
             else:
-                print(f"⚠️ Emoji :{emoji_name}: not found")
+                logger.warning("Configured game emoji was not found: %s", emoji_name)
 
-        # ======== .env 出力（改善版） ========
-        print("\n📝 以下を .env に必ず追記してください。")
-        print("（他の ID がある場合はカンマ区切りで追加）\n")
-
-        all_ids = list(self.REACTION_ROLE_MESSAGE_IDS | {msg.id})
-        print("# Reaction Role 対象メッセージID")
-        print(f"REACTION_ROLE_MESSAGE_IDS={','.join(str(x) for x in all_ids)}\n")
-
-        print("# Reaction Role 対応表（emoji_id:role_id）")
-        for emoji_name, (role_name, env_key) in GAME_REACTION_ROLES.items():
-            emoji = discord.utils.get(guild.emojis, name=emoji_name)
-            role = discord.utils.get(guild.roles, name=role_name)
-            if emoji and role:
-                print(f"{env_key}={emoji.id}:{role.id}")
-        print()
+        logger.info(
+            "Game Reaction Role message created; deployment configuration update required"
+        )
 
     # ======================================================
     # ✅ VALORANT ランク版
@@ -167,25 +160,13 @@ class ReactionRoles(commands.Cog):
             emoji = discord.utils.get(guild.emojis, name=emoji_name)
             if emoji:
                 await msg.add_reaction(emoji)
-                print(f"✅ Added :{emoji_name}:")
+                logger.debug("Reaction added to rank-role message: %s", emoji_name)
             else:
-                print(f"⚠️ Emoji :{emoji_name}: not found")
+                logger.warning("Configured rank emoji was not found: %s", emoji_name)
 
-        # ======== .env 出力（改善版） ========
-        print("\n📝 以下を .env に必ず追記してください。")
-        print("（他の ID がある場合はカンマ区切りで追加）\n")
-
-        all_ids = list(self.REACTION_ROLE_MESSAGE_IDS | {msg.id})
-        print("# Reaction Role 対象メッセージID")
-        print(f"REACTION_ROLE_MESSAGE_IDS={','.join(str(x) for x in all_ids)}\n")
-
-        print("# Reaction Role 対応表（emoji_id:role_id）")
-        for emoji_name, role_name in rank_map.items():
-            emoji = discord.utils.get(guild.emojis, name=emoji_name)
-            role = discord.utils.get(guild.roles, name=role_name)
-            if emoji and role:
-                print(f"RR_{role_name.upper()}={emoji.id}:{role.id}")
-        print()
+        logger.info(
+            "Rank Reaction Role message created; deployment configuration update required"
+        )
 
     # ======================================================
     # ❗ /rrreload 設定再読み込み
@@ -228,9 +209,9 @@ class ReactionRoles(commands.Cog):
             self.bot.tree.add_command(self.rrreload, guild=guild)
             self.bot.tree.add_command(self.rrstatus, guild=guild)
             await self.bot.tree.sync(guild=guild)
-            print("✅ ReactionRole commands synced successfully.")
-        except Exception as e:
-            print(f"⚠️ Failed to sync ReactionRole commands: {e}")
+            logger.info("Reaction Role commands synced")
+        except Exception:
+            logger.exception("Failed to sync Reaction Role commands")
 
 
 async def setup(bot):

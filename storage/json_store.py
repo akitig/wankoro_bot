@@ -31,10 +31,10 @@ def load_json(path: PathLike) -> Any:
     except FileNotFoundError:
         raise
     except json.JSONDecodeError:
-        logger.error("Invalid JSON file: %s", target)
+        logger.exception("Invalid JSON file: %s", target)
         raise
     except OSError:
-        logger.error("Unable to read JSON file: %s", target)
+        logger.exception("Unable to read JSON file: %s", target)
         raise
 
 
@@ -73,7 +73,7 @@ def save_json_atomic(path: PathLike, data: Any) -> None:
         os.replace(temporary_path, target)
         temporary_path = None
     except (OSError, TypeError, ValueError):
-        logger.error("Unable to save JSON file: %s", target)
+        logger.exception("Unable to save JSON file: %s", target)
         raise
     finally:
         if temporary_path is not None:

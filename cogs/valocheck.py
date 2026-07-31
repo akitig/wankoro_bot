@@ -1,4 +1,5 @@
 import json
+import logging
 import random
 from datetime import datetime, timezone
 
@@ -8,6 +9,8 @@ from discord.ext import commands
 
 from config import get_config
 from storage.json_store import load_json, load_json_or_default, save_json_atomic
+
+logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> str:
@@ -134,10 +137,14 @@ class QuizView(discord.ui.View):
         try:
             await interaction.response.edit_message(view=self)
         except Exception:
+            logger.debug(
+                "Failed to disable quiz controls through interaction response",
+                exc_info=True,
+            )
             try:
                 await interaction.edit_original_response(view=self)
             except Exception:
-                pass
+                logger.exception("Failed to disable quiz controls")
 
 
 class StartView(discord.ui.View):
@@ -246,6 +253,7 @@ class ValoCheckCog(commands.Cog):
         try:
             return await guild.fetch_channel(self.log_channel_id)
         except Exception:
+            logger.exception("Failed to resolve diagnostic log channel")
             return None
 
     def _make_embed(self, idx: int) -> discord.Embed:
@@ -289,13 +297,14 @@ class ValoCheckCog(commands.Cog):
             try:
                 admin = await self.bot.fetch_user(self.admin_dm_user_id)
             except Exception:
+                logger.exception("Failed to resolve diagnostic administrator")
                 admin = None
         if admin is None:
             return
         try:
             await admin.send(f"**{title}**\n{body}")
         except Exception:
-            pass
+            logger.exception("Failed to send diagnostic administrator notice")
 
     async def _notify_admin_session(self, title: str, user_id: int, s: dict, origin: str):
         idx = int(s.get("idx", -1))
@@ -339,7 +348,7 @@ class ValoCheckCog(commands.Cog):
             if isinstance(msg, discord.Message):
                 await msg.edit(embed=expired, view=None)
         except Exception:
-            pass
+            logger.exception("Failed to update expired diagnostic message")
 
         await self._notify_admin_session(
             "⏰ VALO診断: セッション期限切れ",
@@ -440,7 +449,7 @@ class ValoCheckCog(commands.Cog):
             try:
                 await msg.edit(embed=e, view=None)
             except Exception:
-                pass
+                logger.exception("Failed to update cancelled diagnostic message")
 
         await self._notify_admin_session(
             "🛑 VALO診断: 管理者中断",
@@ -495,6 +504,7 @@ class ValoCheckCog(commands.Cog):
             try:
                 guild = await self.bot.fetch_guild(self.guild_id)
             except Exception:
+                logger.exception("Failed to resolve diagnostic guild")
                 guild = None
         if guild is None:
             await self._notify_admin_session(
@@ -510,6 +520,7 @@ class ValoCheckCog(commands.Cog):
             if member is None:
                 member = await guild.fetch_member(user.id)
         except Exception:
+            logger.exception("Failed to resolve diagnostic member")
             await self._notify_admin_session(
                 "❌ VALO診断: member取得失敗",
                 user.id,
@@ -530,7 +541,7 @@ class ValoCheckCog(commands.Cog):
             try:
                 await user.send("ロールID設定が正しくないみたい。運営に連絡してね。")
             except Exception:
-                pass
+                logger.exception("Failed to notify user about role configuration")
             return
 
         score = int(s.get("score", 0))
@@ -557,6 +568,7 @@ class ValoCheckCog(commands.Cog):
             if add_roles:
                 await member.add_roles(*add_roles, reason="VALO role check result")
         except discord.Forbidden:
+            logger.exception("Insufficient permission to update diagnostic roles")
             await self._notify_admin_session(
                 "❌ VALO診断: ロール付与権限不足",
                 user.id,
@@ -568,9 +580,10 @@ class ValoCheckCog(commands.Cog):
                     "ロール付与に失敗しました（権限不足）。Botの権限/ロール位置を確認してね。"
                 )
             except Exception:
-                pass
+                logger.exception("Failed to notify user about role permission error")
             return
         except Exception:
+            logger.exception("Failed to update diagnostic roles")
             await self._notify_admin_session(
                 "❌ VALO診断: ロール付与で例外",
                 user.id,
@@ -580,7 +593,7 @@ class ValoCheckCog(commands.Cog):
             try:
                 await user.send("ロール付与に失敗しました。管理者に連絡してね。")
             except Exception:
-                pass
+                logger.exception("Failed to notify user about role update error")
             return
 
         e = discord.Embed(
@@ -594,15 +607,19 @@ class ValoCheckCog(commands.Cog):
             try:
                 await msg.edit(embed=e, view=None)
             except Exception:
+                logger.debug(
+                    "Failed to edit diagnostic result message; trying direct message",
+                    exc_info=True,
+                )
                 try:
                     await user.send(embed=e)
                 except Exception:
-                    pass
+                    logger.exception("Failed to deliver diagnostic result")
         else:
             try:
                 await user.send(embed=e)
             except Exception:
-                pass
+                logger.exception("Failed to deliver diagnostic result")
 
         uid = str(member.id)
         self.completed[uid] = {
@@ -668,7 +685,7 @@ class ValoCheckCog(commands.Cog):
         try:
             await ch.send(embed=e)
         except Exception:
-            pass
+            logger.exception("Failed to send diagnostic audit event")
 
     @app_commands.command(
         name="valo_role",
@@ -728,6 +745,7 @@ class ValoCheckCog(commands.Cog):
         try:
             await self._send_intro(member)
         except discord.Forbidden:
+            logger.exception("Diagnostic direct message was forbidden")
             self.sessions.pop(member.id, None)
             await interaction.followup.send(
                 "DMを送れませんでした。相手がサーバーDMを拒否しています。",
@@ -739,6 +757,7 @@ class ValoCheckCog(commands.Cog):
             )
             return
         except Exception:
+            logger.exception("Failed to send diagnostic direct message")
             self.sessions.pop(member.id, None)
             await interaction.followup.send(
                 "DM送信に失敗しました。管理者に連絡してね。",

@@ -1,3 +1,4 @@
+import logging
 import random
 
 import aiohttp
@@ -7,6 +8,8 @@ from discord.ext import commands
 
 from config import get_config
 from storage.json_store import load_json_or_default, save_json_atomic
+
+logger = logging.getLogger(__name__)
 
 VALO_API_URL = "https://valorant-api.com/v1/maps"
 
@@ -25,7 +28,7 @@ class ValorantMap(commands.Cog):
     def load_bans(self):
         data = load_json_or_default(self.config.valomap_bans_path, {"bans": []})
         self.banned_maps = set(data.get("bans", []))
-        print(f"🚫 Loaded banned maps: {self.banned_maps}")
+        logger.info("VALORANT map bans loaded: count=%d", len(self.banned_maps))
 
     def save_bans(self):
         try:
@@ -33,9 +36,9 @@ class ValorantMap(commands.Cog):
                 self.config.valomap_bans_path,
                 {"bans": list(self.banned_maps)},
             )
-            print(f"💾 Saved banned maps: {self.banned_maps}")
+            logger.info("VALORANT map bans saved: count=%d", len(self.banned_maps))
         except (OSError, TypeError, ValueError):
-            print("⚠️ Failed to save ban file.")
+            logger.exception("Failed to save VALORANT map bans")
 
     # -------------------------------
     # 🔹 マップデータ取得
@@ -48,7 +51,10 @@ class ValorantMap(commands.Cog):
         async with aiohttp.ClientSession(headers=headers) as session:
             async with session.get(VALO_API_URL) as resp:
                 if resp.status != 200:
-                    print(f"⚠️ Failed to fetch maps: {resp.status}")
+                    logger.warning(
+                        "VALORANT map API returned non-success status: %d",
+                        resp.status,
+                    )
                     return []
                 data = await resp.json()
                 return data.get("data", [])
@@ -66,7 +72,7 @@ class ValorantMap(commands.Cog):
                     or (m.get("tacticalDescription") and not m["displayName"].startswith("Range"))
                 )
             ]
-            print(f"🗺️ Cached {len(self.cached_maps)} maps.")
+            logger.info("VALORANT maps cached: count=%d", len(self.cached_maps))
         return self.cached_maps
 
     # -------------------------------
@@ -224,9 +230,9 @@ class ValorantMap(commands.Cog):
             self.bot.tree.add_command(self.valomap_clear, guild=guild)
             self.bot.tree.add_command(self.valomap_help, guild=guild)
             synced = await self.bot.tree.sync(guild=guild)
-            print(f"✅ Slash commands synced (valomap): {[cmd.name for cmd in synced]}")
-        except Exception as e:
-            print(f"⚠️ Failed to sync valomap commands: {e}")
+            logger.info("VALORANT map commands synced: count=%d", len(synced))
+        except Exception:
+            logger.exception("Failed to sync VALORANT map commands")
 
         if not self.cached_maps:
             await self.get_comp_maps()
@@ -237,4 +243,4 @@ class ValorantMap(commands.Cog):
 # -------------------------------
 async def setup(bot):
     await bot.add_cog(ValorantMap(bot))
-    print("✅ Loaded: cogs.valomap (Full version with /valocustom)")
+    logger.info("VALORANT map Cog initialized")

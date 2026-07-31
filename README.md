@@ -203,6 +203,20 @@ env APPLICATION_ID=1 GUILD_ID=1 .venv/bin/python -c \
 
 ---
 
+## 📝 ログ
+
+ログは `timestamp level logger名 message` の共通形式です。既定のログレベルは
+`INFO`で、必要な場合は既存設定と互換性を保ったまま `.env` の
+`LOG_LEVEL=DEBUG` などで変更できます。空または無効な値は安全に`INFO`へ戻ります。
+
+`INFO`以下はstdout、`WARNING`以上はstderrへ出力されます。このため既存systemd
+Unitの`StandardOutput`（`bot.log`）と`StandardError`（`bot.err`）は変更不要です。
+例外にはstack traceを付けますが、Discord Token、`.env`内容、JSON全文、DM本文、
+個人情報はログへ記録しません。詳細は
+[`docs/architecture/logging.md`](docs/architecture/logging.md)を参照してください。
+
+---
+
 ## 💬 作者・クレジット
 
 **開発者：** あきと（[@akitig](https://akitiger.com)）  

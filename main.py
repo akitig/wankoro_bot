@@ -1,10 +1,22 @@
 import asyncio
+import logging
+
 import discord
 from discord.ext import commands
 
 from config import get_config
+from logging_config import configure_logging
 
-config = get_config()
+logger = logging.getLogger(__name__)
+
+try:
+    config = get_config()
+except Exception:
+    configure_logging("INFO")
+    logger.critical("Bot configuration could not be loaded", exc_info=True)
+    raise
+
+configure_logging(config.log_level, secrets=(config.discord_token,))
 intents = discord.Intents.all()
 
 COGS = [
@@ -25,9 +37,9 @@ class MyBot(commands.Bot):
         for cog in COGS:
             try:
                 await self.load_extension(cog)
-                print(f"✅ Loaded: {cog}")
-            except Exception as e:
-                print(f"❌ Failed to load {cog}: {e}")
+                logger.info("Cog loaded: %s", cog)
+            except Exception:
+                logger.exception("Cog failed to load: %s", cog)
 
         guild = discord.Object(id=config.guild_id)
 
@@ -35,9 +47,9 @@ class MyBot(commands.Bot):
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)
 
-        print(
-            f"✅ Slash commands synced to guild {guild.id}: "
-            f"{[cmd.name for cmd in self.tree.get_commands(guild=guild)]}"
+        logger.info(
+            "Application commands synced: count=%d",
+            len(self.tree.get_commands(guild=guild)),
         )
 
 bot = MyBot(
@@ -48,10 +60,15 @@ bot = MyBot(
 
 @bot.event
 async def on_ready():
-    print(f"✅ Logged in as {bot.user} ({bot.user.id})")
+    logger.info("Bot connected to Discord")
 
 async def main():
-    await bot.start(config.discord_token)
+    logger.info("Bot startup requested")
+    try:
+        await bot.start(config.discord_token)
+    except Exception:
+        logger.critical("Bot startup failed", exc_info=True)
+        raise
 
 if __name__ == "__main__":
     asyncio.run(main())
