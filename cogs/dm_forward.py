@@ -28,13 +28,15 @@ class DmForwardCog(commands.Cog):
             try:
                 target = await self.bot.fetch_user(self.forward_user_id)
             except Exception:
-                logger.exception("Failed to resolve the configured DM forwarding target")
+                logger.exception(
+                    "Failed to resolve the configured DM forwarding target"
+                )
                 return
 
         # 転送本文
         content = message.content or ""
         header = (
-            f"📩 **DM転送**\n"
+            "📩 **DM転送**\n"
             f"From: **{message.author}** (`{message.author.id}`)\n"
         )
 
@@ -48,10 +50,10 @@ class DmForwardCog(commands.Cog):
             logger.exception("Failed to forward a DM message")
             return
 
-        # 添付ファイルも転送（URLだけでもOKならこれで十分）
-        for a in message.attachments[:10]:
+        # 添付ファイルも転送
+        for attachment in message.attachments[:10]:
             try:
-                await target.send(f"📎 添付: {a.url}")
+                await target.send(f"📎 添付: {attachment.url}")
             except Exception:
                 logger.exception("Failed to forward a DM attachment")
 

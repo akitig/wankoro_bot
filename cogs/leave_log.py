@@ -1,12 +1,13 @@
+import asyncio
 import logging
 
 import discord
 from discord.ext import commands
-import asyncio
 
 from config import get_config
 
 logger = logging.getLogger(__name__)
+
 
 class LeaveLog(commands.Cog):
     def __init__(self, bot):
@@ -54,20 +55,41 @@ class LeaveLog(commands.Cog):
         titles = {
             "leave": "📕 退出者が出ました",
             "kick": "🦶 ユーザーが追放されました",
-            "ban": "🕊️ ユーザーがBANされました"
+            "ban": "🕊️ ユーザーがBANされました",
         }
 
         # Embed生成
         embed = discord.Embed(title=titles[event_type], color=color)
-        embed.add_field(name="👤 ユーザー:", value=f"{member.mention}", inline=False)
-        embed.add_field(name="🆔 ID:", value=f"`{member.id}`", inline=False)
-        embed.add_field(name="🎭 退出時ロール:", value=role_list, inline=False)
+        embed.add_field(
+            name="👤 ユーザー:",
+            value=f"{member.mention}",
+            inline=False,
+        )
+        embed.add_field(
+            name="🆔 ID:",
+            value=f"`{member.id}`",
+            inline=False,
+        )
+        embed.add_field(
+            name="🎭 退出時ロール:",
+            value=role_list,
+            inline=False,
+        )
         if reason:
-            embed.add_field(name="📝 理由:", value=reason, inline=False)
-        embed.set_thumbnail(url=member.display_avatar.url if member.display_avatar else None)
+            embed.add_field(
+                name="📝 理由:",
+                value=reason,
+                inline=False,
+            )
+        embed.set_thumbnail(
+            url=member.display_avatar.url if member.display_avatar else None
+        )
 
         await channel.send(embed=embed)
-        logger.info("Leave notification sent: event_type=%s", event_type)
+        logger.info(
+            "Leave notification sent: event_type=%s",
+            event_type,
+        )
 
     # ======================================================
     # ✅ BAN検知イベント
@@ -80,6 +102,7 @@ class LeaveLog(commands.Cog):
         except Exception:
             logger.exception("Failed to fetch ban details")
             reason = "理由なし"
+
         self.recent_bans[user.id] = reason
         logger.info("Member ban event recorded")
 
