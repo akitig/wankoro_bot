@@ -34,6 +34,21 @@ def _fmt_mmss(sec: int) -> str:
     return f"{m}分{s}秒"
 
 
+def _choose_cooldown(min_sec: int, max_sec: int) -> int:
+    minimum = _clamp(min_sec, 5, 3600)
+    maximum = _clamp(max_sec, 5, 3600)
+    if minimum > maximum:
+        minimum, maximum = maximum, minimum
+    return random.randint(minimum, maximum)
+
+
+def _advance_count(count: int) -> tuple[int, bool]:
+    next_count = count + 1
+    if next_count >= 108:
+        return 108, True
+    return next_count, False
+
+
 def _only_user(user_id: int) -> Callable[[discord.Interaction], bool]:
     def _pred(interaction: discord.Interaction) -> bool:
         return bool(interaction.user and interaction.user.id == user_id)
@@ -308,17 +323,12 @@ class JoyaGacha(commands.Cog):
                 return
 
             cfg = self._get_cfg(guild_id)
-            mn = _clamp(cfg.cd_min_sec, 5, 3600)
-            mx = _clamp(cfg.cd_max_sec, 5, 3600)
-            if mn > mx:
-                mn, mx = mx, mn
-
-            cd = random.randint(mn, mx)
+            cd = _choose_cooldown(cfg.cd_min_sec, cfg.cd_max_sec)
             self._set_cooldown(guild_id, user_id, cd)
             self._store.save()
 
-            count += 1
-            if count < 108:
+            count, finished = _advance_count(count)
+            if not finished:
                 self._set_count_state(guild_id, count, False)
                 await interaction.followup.send(self._normal_msg(count, cd))
                 return
