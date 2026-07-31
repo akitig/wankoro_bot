@@ -1,11 +1,19 @@
 import asyncio
 import logging
+from types import SimpleNamespace
 
 import pytest
 
-import cogs.welcome as welcome_module
 from cogs.welcome import Welcome
-from tests.helpers.discord_fakes import FakeBot, FakeGuild, FakeMember, FakeRole
+from services.welcome_service import WelcomeService
+from tests.helpers.discord_fakes import (
+    FakeBot,
+    FakeChannel,
+    FakeGuild,
+    FakeInteraction,
+    FakeMember,
+    FakeRole,
+)
 
 
 class FakeForbidden(Exception):
@@ -15,8 +23,6 @@ class FakeForbidden(Exception):
 def _cog(guild: FakeGuild) -> Welcome:
     cog = Welcome.__new__(Welcome)
     cog.bot = FakeBot(guild)
-    cog.user_answers = {}
-    cog.processing_users = set()
     cog.GUILD_ID = guild.id
     cog.ADMIN_ID = 700
     cog.ROLE_A = 801
@@ -25,6 +31,12 @@ def _cog(guild: FakeGuild) -> Welcome:
     cog.WELCOME_CATEGORY_NAME = "welcome"
     cog.LOG_CATEGORY_NAME = "log"
     cog.MANAGER_ROLE_IDS = {900}
+    cog.service = WelcomeService(
+        cog.bot,
+        guild_id=cog.GUILD_ID,
+        admin_id=cog.ADMIN_ID,
+        staff_role_ids=(cog.ROLE_A, cog.ROLE_B, cog.ROLE_C),
+    )
     return cog
 
 
@@ -32,7 +44,14 @@ def test_configured_guild_is_used_and_welcome_messages_are_sent() -> None:
     guild = FakeGuild(guild_id=100)
     member = FakeMember(500, name="NewMember")
 
-    channel = asyncio.run(_cog(guild).create_welcome_room(member))
+    cog = _cog(guild)
+    channel = asyncio.run(
+        cog.service.create_welcome_room(
+            member,
+            welcome_embed=cog.welcome_embed,
+            question_view=lambda: object(),
+        )
+    )
 
     assert channel is guild.created_text_channels[0]
     assert guild.created_categories[0].name == "welcome"
@@ -46,12 +65,18 @@ def test_staff_role_selects_welcome_staff(monkeypatch: pytest.MonkeyPatch) -> No
     staff = FakeMember(501, roles=[staff_role])
     guild = FakeGuild(guild_id=100, roles=[staff_role], members=[staff])
     member = FakeMember(500)
-    monkeypatch.setattr(welcome_module.random, "choice", lambda values: values[0])
     cog = _cog(guild)
+    cog.service._choice = lambda values: values[0]
 
-    asyncio.run(cog.create_welcome_room(member))
+    asyncio.run(
+        cog.service.create_welcome_room(
+            member,
+            welcome_embed=cog.welcome_embed,
+            question_view=lambda: object(),
+        )
+    )
 
-    assert cog.user_answers[member.id]["staff_id"] == staff.id
+    assert cog.service.get_answers(member.id)["staff_id"] == staff.id
 
 
 def test_missing_staff_roles_falls_back_to_admin_and_still_sends() -> None:
@@ -59,9 +84,15 @@ def test_missing_staff_roles_falls_back_to_admin_and_still_sends() -> None:
     member = FakeMember(500)
     cog = _cog(guild)
 
-    channel = asyncio.run(cog.create_welcome_room(member))
+    channel = asyncio.run(
+        cog.service.create_welcome_room(
+            member,
+            welcome_embed=cog.welcome_embed,
+            question_view=lambda: object(),
+        )
+    )
 
-    assert cog.user_answers[member.id]["staff_id"] == cog.ADMIN_ID
+    assert cog.service.get_answers(member.id)["staff_id"] == cog.ADMIN_ID
     assert len(channel.sent) == 3
 
 
@@ -69,13 +100,22 @@ def test_permission_failure_logs_no_member_name_or_message_body(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    monkeypatch.setattr(welcome_module.discord, "Forbidden", FakeForbidden)
+    import services.welcome_service as service_module
+
+    monkeypatch.setattr(service_module.discord, "Forbidden", FakeForbidden)
     guild = FakeGuild(guild_id=100)
     guild.channel_send_error = FakeForbidden("private transport detail")
     member = FakeMember(500, name="private-member-name")
 
     with caplog.at_level(logging.ERROR):
-        channel = asyncio.run(_cog(guild).create_welcome_room(member))
+        cog = _cog(guild)
+        channel = asyncio.run(
+            cog.service.create_welcome_room(
+                member,
+                welcome_embed=cog.welcome_embed,
+                question_view=lambda: object(),
+            )
+        )
 
     assert channel is None
     assert "Bot cannot send messages to a welcome channel" in caplog.text
@@ -89,8 +129,6 @@ def test_welcome_command_metadata_and_ephemeral_permission_denial() -> None:
     invoking_member = FakeMember(600)
     target = FakeMember(500)
 
-    from tests.helpers.discord_fakes import FakeInteraction
-
     interaction = FakeInteraction(invoking_member, guild=guild)
     asyncio.run(Welcome.welcome_slash.callback(cog, interaction, target))
 
@@ -98,4 +136,87 @@ def test_welcome_command_metadata_and_ephemeral_permission_denial() -> None:
     assert Welcome.welcome_slash.description == "指定したユーザーのwelcome部屋を作成します"
     assert interaction.response.calls == [
         ("send_message", ("⛔ 管理者のみ実行可",), {"ephemeral": True})
+    ]
+
+
+def test_on_member_join_delegates_to_service() -> None:
+    guild = FakeGuild(guild_id=100)
+    member = FakeMember(500)
+    cog = _cog(guild)
+    calls = []
+
+    async def create(target, **kwargs):
+        calls.append((target, kwargs))
+
+    cog.service.create_welcome_room = create
+
+    asyncio.run(cog.on_member_join(member))
+
+    assert calls[0][0] is member
+    assert callable(calls[0][1]["welcome_embed"])
+    assert callable(calls[0][1]["question_view"])
+
+
+def test_welcome_command_delegates_to_service() -> None:
+    guild = FakeGuild(guild_id=100)
+    invoker = FakeMember(700)
+    member = FakeMember(500)
+    interaction = FakeInteraction(invoker, guild=guild)
+    cog = _cog(guild)
+    channel = FakeChannel()
+
+    async def create(target, **kwargs):
+        assert target is member
+        return channel
+
+    cog.service.create_welcome_room = create
+
+    asyncio.run(Welcome.welcome_slash.callback(cog, interaction, member))
+
+    assert interaction.response.calls == [
+        (
+            "send_message",
+            (f"✅ {member.display_name} の部屋を作成しました → {channel.mention}",),
+            {"ephemeral": False},
+        )
+    ]
+
+
+def test_question_view_uses_service_owned_answers() -> None:
+    guild = FakeGuild(guild_id=100)
+    member = FakeMember(500)
+    cog = _cog(guild)
+    cog.service.user_answers[member.id] = {"staff_id": 700}
+    interaction = FakeInteraction(member)
+
+    async def scenario() -> None:
+        view = Welcome.Question2(cog, member)
+        await view.set_gender(interaction, "男")
+
+    asyncio.run(scenario())
+
+    assert cog.service.get_answers(member.id)["gender"] == "男"
+    assert interaction.response.calls[0][0] == "edit_message"
+
+
+def test_ok_command_keeps_existing_category_move_behavior() -> None:
+    category = SimpleNamespace(name="log")
+    guild = FakeGuild(guild_id=100)
+    guild.categories = [category]
+    invoker = FakeMember(700)
+    interaction = FakeInteraction(invoker, guild=guild)
+    interaction.channel = FakeChannel()
+    cog = _cog(guild)
+
+    asyncio.run(Welcome.ok_slash.callback(cog, interaction))
+
+    assert interaction.channel.edits == [
+        {"category": category, "sync_permissions": True}
+    ]
+    assert interaction.response.calls == [
+        (
+            "send_message",
+            (f"✅ {interaction.channel.mention} を log に移動しました。",),
+            {"ephemeral": False},
+        )
     ]
