@@ -1,0 +1,19 @@
+# Production lock for Python 3.10.
+# Versions, including transitive dependencies, match the VPS environment
+# observed on 2026-07-31. Direct dependencies are declared in pyproject.toml.
+# Regenerate and test this lock for each future supported Python version.
+#
+# Do not install directly into the system Python used by production.
+aiohappyeyeballs==2.6.1
+aiohttp==3.12.14
+aiosignal==1.4.0
+async-timeout==5.0.1
+attrs==21.2.0
+discord.py==2.6.4
+frozenlist==1.7.0
+idna==3.3
+multidict==6.6.3
+propcache==0.3.2
+python-dotenv==1.2.1
+typing_extensions==4.12.2
+yarl==1.20.1
