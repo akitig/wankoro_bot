@@ -1,5 +1,4 @@
 import asyncio
-import os
 import random
 import time
 from dataclasses import dataclass
@@ -9,17 +8,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from config import get_config
 from storage.json_store import load_json_or_default, save_json_atomic
-
-
-def _get_int_env(key: str, default: int) -> int:
-    v = os.getenv(key)
-    if not v:
-        return default
-    try:
-        return int(v)
-    except ValueError:
-        return default
 
 
 def _now_ts() -> int:
@@ -123,13 +113,13 @@ class JoyaView(discord.ui.View):
 class JoyaGacha(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        self._min_env = _get_int_env("JOYA_MIN_SEC", 60)
-        self._max_env = _get_int_env("JOYA_MAX_SEC", 300)
-        self._role_id = _get_int_env("JOYA_WINNER_ROLE_ID", 0)
-        self._channel_id = _get_int_env("JOYA_CHANNEL_ID", 0)
+        config = get_config()
+        self._min_env = config.joya_min_sec
+        self._max_env = config.joya_max_sec
+        self._role_id = config.joya_winner_role_id
+        self._channel_id = config.joya_channel_id
         self._block_role_id = 1451758143636901960
-        path = os.getenv("JOYA_DATA_PATH", "./data/joya_state.json")
-        self._store = _JoyaStore(path)
+        self._store = _JoyaStore(config.joya_data_path)
         self._locks: Dict[int, asyncio.Lock] = {}
 
     async def cog_load(self) -> None:

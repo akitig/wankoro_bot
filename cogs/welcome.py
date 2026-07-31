@@ -1,10 +1,10 @@
-import os
 import random
 import discord
 from discord.ext import commands
 from discord.ui import View, Button
 from discord import app_commands
 
+from config import get_config
 
 class Welcome(commands.Cog):
     def __init__(self, bot):
@@ -13,18 +13,20 @@ class Welcome(commands.Cog):
         self.processing_users = set()
 
         # --- 環境変数設定 ---
-        self.GUILD_ID = int(os.getenv("GUILD_ID"))
-        self.ADMIN_ID = int(os.getenv("ADMIN_ID"))
-        self.ROLE_A = int(os.getenv("ROLE_A"))
-        self.ROLE_B = int(os.getenv("ROLE_B"))
-        self.ROLE_C = int(os.getenv("ROLE_C"))
-        self.LEAVE_LOG_CHANNEL_ID = int(os.getenv("LEAVE_LOG_CHANNEL_ID"))
+        config = get_config()
+        self.GUILD_ID = config.guild_id
+        self.ADMIN_ID = config.require_id(config.admin_id, "ADMIN_ID")
+        self.ROLE_A = config.require_id(config.welcome_role_a, "ROLE_A")
+        self.ROLE_B = config.require_id(config.welcome_role_b, "ROLE_B")
+        self.ROLE_C = config.require_id(config.welcome_role_c, "ROLE_C")
+        self.LEAVE_LOG_CHANNEL_ID = config.require_id(
+            config.leave_log_channel_id,
+            "LEAVE_LOG_CHANNEL_ID",
+        )
         self.WELCOME_CATEGORY_NAME = "welcome"
         self.LOG_CATEGORY_NAME = "log"
 
-        self.MANAGER_ROLE_IDS = {
-            int(r) for r in os.getenv("MANAGER_ROLE_IDS", "").split(",") if r.strip().isdigit()
-        }
+        self.MANAGER_ROLE_IDS = set(config.manager_role_ids)
 
     # ------------------------------------------------------
     # ✅ 管理者判定

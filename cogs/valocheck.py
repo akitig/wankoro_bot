@@ -1,5 +1,4 @@
 import json
-import os
 import random
 from datetime import datetime, timezone
 
@@ -7,45 +6,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from config import get_config
 from storage.json_store import load_json, load_json_or_default, save_json_atomic
-
-
-def _get_int_env(key: str) -> int:
-    v = os.getenv(key)
-    if not v:
-        raise RuntimeError(f"Missing env: {key}")
-    return int(v)
-
-
-def _get_opt_int_env(key: str, default: int) -> int:
-    v = os.getenv(key)
-    if not v:
-        return default
-    try:
-        return int(v)
-    except ValueError:
-        return default
-
-
-def _get_str_env(key: str, default: str) -> str:
-    v = os.getenv(key)
-    if not v:
-        return default
-    return v
-
-
-def _get_opt_id_env(key: str):
-    v = os.getenv(key)
-    if not v:
-        return None
-    try:
-        return int(v)
-    except ValueError:
-        return None
-
-
-def _get_opt_channel_id_env(key: str):
-    return _get_opt_id_env(key)
 
 
 def _utc_now() -> str:
@@ -207,22 +169,25 @@ class StartView(discord.ui.View):
 class ValoCheckCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        config = get_config()
 
-        self.guild_id = _get_int_env("GUILD_ID")
-        self.role_enjoy_id = _get_int_env("ROLE_ENJOY_ID")
-        self.role_gachi_id = _get_int_env("ROLE_GACHI_ID")
-
-        self.log_channel_id = _get_opt_channel_id_env("VALO_ROLE_LOG_CHANNEL_ID")
-        self.admin_dm_user_id = _get_opt_id_env("DM_FORWARD_USER_ID")
-        self.view_timeout_sec = _get_opt_int_env("VALO_CHECK_VIEW_TIMEOUT_SEC", 1800)
-
-        self.data_path = _get_str_env(
-            "VALO_CHECK_DATA_PATH", "data/valo_check_completed.json"
+        self.guild_id = config.guild_id
+        self.role_enjoy_id = config.require_id(
+            config.valo_role_enjoy_id,
+            "ROLE_ENJOY_ID",
         )
-        self.questions_path = _get_str_env(
-            "VALO_CHECK_QUESTIONS_PATH", "data/valo_questions.json"
+        self.role_gachi_id = config.require_id(
+            config.valo_role_gachi_id,
+            "ROLE_GACHI_ID",
         )
-        self.intro_path = _get_str_env("VALO_CHECK_INTRO_PATH", "data/valo_intro.json")
+
+        self.log_channel_id = config.valo_role_log_channel_id
+        self.admin_dm_user_id = config.dm_forward_user_id
+        self.view_timeout_sec = config.valo_check_view_timeout_sec
+
+        self.data_path = config.valo_check_data_path
+        self.questions_path = config.valo_check_questions_path
+        self.intro_path = config.valo_check_intro_path
 
         intro = _load_intro(self.intro_path)
         if intro is None:
@@ -231,12 +196,12 @@ class ValoCheckCog(commands.Cog):
         else:
             self.intro_title, self.intro_text = intro
 
-        self.thresh_enjoy_only = _get_opt_int_env("VALO_CHECK_THRESH_ENJOY_ONLY", 6)
-        self.thresh_gachi_only = _get_opt_int_env("VALO_CHECK_THRESH_GACHI_ONLY", 12)
+        self.thresh_enjoy_only = config.valo_check_thresh_enjoy_only
+        self.thresh_gachi_only = config.valo_check_thresh_gachi_only
 
-        self.label_enjoy = _get_str_env("VALO_CHECK_LABEL_ENJOY", "ENJOYのみ")
-        self.label_gachi = _get_str_env("VALO_CHECK_LABEL_GACHI", "GACHIのみ")
-        self.label_both = _get_str_env("VALO_CHECK_LABEL_BOTH", "GACHI+ENJOY")
+        self.label_enjoy = config.valo_check_label_enjoy
+        self.label_gachi = config.valo_check_label_gachi
+        self.label_both = config.valo_check_label_both
 
         self.questions = []
         self.max_score = 0

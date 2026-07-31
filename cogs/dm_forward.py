@@ -1,22 +1,13 @@
-import os
 import discord
 from discord.ext import commands
 
-
-def _get_opt_int_env(key: str):
-    v = os.getenv(key)
-    if not v:
-        return None
-    try:
-        return int(v)
-    except ValueError:
-        return None
+from config import get_config
 
 
 class DmForwardCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.forward_user_id = _get_opt_int_env("DM_FORWARD_USER_ID")
+        self.forward_user_id = get_config().dm_forward_user_id
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):

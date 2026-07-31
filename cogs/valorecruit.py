@@ -1,25 +1,9 @@
-import os
 import time
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-
-def _get_int_env(key: str) -> int:
-    v = os.getenv(key)
-    if not v:
-        raise RuntimeError(f"Missing env: {key}")
-    return int(v)
-
-
-def _get_opt_int_env(key: str, default: int) -> int:
-    v = os.getenv(key)
-    if not v:
-        return default
-    try:
-        return int(v)
-    except ValueError:
-        return default
+from config import get_config
 
 
 def _has_forbidden_mentions(text: str) -> bool:
@@ -250,18 +234,28 @@ class ValoRecruitView(discord.ui.View):
 class ValoRecruitCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        channel_id = _get_int_env("VALO_RECRUIT_CHANNEL_ID")
-        gachi_id = _get_int_env("VALO_ROLE_GACHI_ID")
-        enjoy_id = _get_int_env("VALO_ROLE_ENJOY_ID")
-        cooldown = _get_opt_int_env("VALO_RECRUIT_COOLDOWN_SECONDS", 300)
+        config = get_config()
+        channel_id = config.require_id(
+            config.valo_recruit_channel_id,
+            "VALO_RECRUIT_CHANNEL_ID",
+        )
+        gachi_id = config.require_id(
+            config.valo_recruit_gachi_role_id,
+            "VALO_ROLE_GACHI_ID",
+        )
+        enjoy_id = config.require_id(
+            config.valo_recruit_enjoy_role_id,
+            "VALO_ROLE_ENJOY_ID",
+        )
+        cooldown = config.valo_recruit_cooldown_seconds
+        self.channel_id = channel_id
         self.view = ValoRecruitView(channel_id, gachi_id, enjoy_id, cooldown)
         bot.add_view(self.view)
 
     @app_commands.command(name="valo_panel", description="VALO募集パネルを設置します")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def valo_panel(self, interaction: discord.Interaction) -> None:
-        channel_id = _get_int_env("VALO_RECRUIT_CHANNEL_ID")
-        channel = interaction.client.get_channel(channel_id)
+        channel = interaction.client.get_channel(self.channel_id)
         if not isinstance(channel, discord.TextChannel):
             await interaction.response.send_message(
                 "募集チャンネルが見つからないよ。",

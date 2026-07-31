@@ -1,10 +1,10 @@
-import os
 import asyncio
 import discord
-from dotenv import load_dotenv
 from discord.ext import commands
 
-load_dotenv()
+from config import get_config
+
+config = get_config()
 intents = discord.Intents.all()
 
 COGS = [
@@ -29,7 +29,7 @@ class MyBot(commands.Bot):
             except Exception as e:
                 print(f"❌ Failed to load {cog}: {e}")
 
-        guild = discord.Object(id=int(os.getenv("GUILD_ID")))
+        guild = discord.Object(id=config.guild_id)
 
         # Cog側の @app_commands.command をギルドに即反映させる
         self.tree.copy_global_to(guild=guild)
@@ -43,7 +43,7 @@ class MyBot(commands.Bot):
 bot = MyBot(
     command_prefix="/",
     intents=intents,
-    application_id=int(os.getenv("APPLICATION_ID")),
+    application_id=config.application_id,
 )
 
 @bot.event
@@ -51,7 +51,7 @@ async def on_ready():
     print(f"✅ Logged in as {bot.user} ({bot.user.id})")
 
 async def main():
-    await bot.start(os.getenv("DISCORD_TOKEN"))
+    await bot.start(config.discord_token)
 
 if __name__ == "__main__":
     asyncio.run(main())

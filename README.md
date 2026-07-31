@@ -106,7 +106,9 @@ python3 -m venv .venv
 
 `.env.example` をコピーし、値を設定してください。systemdの
 `EnvironmentFile`で読み込めるよう、環境変数名にはASCII英大文字・数字・
-アンダースコアのみを使用します。
+アンダースコアのみを使用します。全設定、型、デフォルト値、runtime pathは
+[`docs/architecture/configuration.md`](docs/architecture/configuration.md)を
+参照してください。
 
 ```env
 DISCORD_TOKEN=xxxxxxxxxxxxxxxx

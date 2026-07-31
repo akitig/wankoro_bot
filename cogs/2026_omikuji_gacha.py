@@ -1,5 +1,4 @@
 import asyncio
-import os
 import random
 from dataclasses import dataclass
 from typing import Dict, Optional
@@ -8,24 +7,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from config import get_config
 from storage.json_store import load_json_or_default, save_json_atomic
-
-
-def _get_env_str(key: str, default: str) -> str:
-    v = os.getenv(key)
-    if v is None or v.strip() == "":
-        return default
-    return v.strip()
-
-
-def _get_env_int(key: str, default: int) -> int:
-    v = os.getenv(key)
-    if v is None or v.strip() == "":
-        return default
-    try:
-        return int(v.strip())
-    except ValueError:
-        return default
 
 
 @dataclass
@@ -37,12 +20,12 @@ class t_omikuji_env:
 
 
 def _load_env() -> t_omikuji_env:
-    default_path = os.path.join("data", "2026_omikujii_points.json")
+    config = get_config()
     return t_omikuji_env(
-        rest_vc_id=_get_env_int("OMIKUJI_REST_VC_ID", 0),
-        resetter_user_id=_get_env_int("OMIKUJI_RESETTER_USER_ID", 0),
-        panel_channel_id=_get_env_int("OMIKUJI_PANEL_CHANNEL_ID", 0),
-        points_path=_get_env_str("OMIKUJI_POINTS_PATH", default_path),
+        rest_vc_id=config.omikuji_rest_vc_id,
+        resetter_user_id=config.omikuji_resetter_user_id,
+        panel_channel_id=config.omikuji_panel_channel_id,
+        points_path=str(config.omikuji_points_path),
     )
 
 
