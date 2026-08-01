@@ -23,6 +23,7 @@ class FakeMember:
         name: str = "test-member",
         roles: list[FakeRole] | None = None,
         bot: bool = False,
+        voice: Any | None = None,
     ) -> None:
         self.id = user_id
         self.name = name
@@ -30,6 +31,7 @@ class FakeMember:
         self.mention = f"<@{user_id}>"
         self.roles = list(roles or [])
         self.bot = bot
+        self.voice = voice
         self.guild: FakeGuild | None = None
         self.display_avatar = SimpleNamespace(url="https://invalid/avatar.png")
         self.added_roles: list[tuple[Any, ...]] = []

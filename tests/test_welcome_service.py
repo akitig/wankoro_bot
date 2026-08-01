@@ -22,12 +22,17 @@ def _service(
     guild: FakeGuild,
     *,
     choice=lambda values: values[0],
+    handler_role_id=801,
+    inactive_voice_channel_id=None,
+    excluded_user_ids=frozenset(),
 ) -> WelcomeService:
     return WelcomeService(
         FakeBot(guild),
         guild_id=guild.id,
         admin_id=700,
-        staff_role_ids=(801, 802, 803),
+        handler_role_id=handler_role_id,
+        inactive_voice_channel_id=inactive_voice_channel_id,
+        excluded_user_ids=excluded_user_ids,
         choice=choice,
     )
 
@@ -59,11 +64,167 @@ def test_regular_staff_candidate_is_selected() -> None:
 def test_voice_channel_staff_candidate_is_prioritized() -> None:
     role = FakeRole(801)
     regular = FakeMember(501, roles=[role])
-    in_voice = FakeMember(502, roles=[role])
+    in_voice = FakeMember(
+        502,
+        roles=[role],
+        voice=SimpleNamespace(channel=SimpleNamespace(id=1000)),
+    )
     guild = FakeGuild(roles=[role], members=[regular, in_voice])
-    guild.voice_channels = [SimpleNamespace(members=[in_voice])]
 
     assert asyncio.run(_service(guild).pick_staff(guild)) is in_voice
+
+
+def test_only_handler_role_members_are_candidates_and_duplicates_are_removed() -> None:
+    handler_role = FakeRole(801)
+    other_role = FakeRole(802)
+    eligible = FakeMember(501, roles=[handler_role, other_role])
+    other = FakeMember(502, roles=[other_role])
+    duplicate = eligible
+    guild = FakeGuild(
+        roles=[handler_role, other_role],
+        members=[eligible, other, duplicate],
+    )
+
+    service = _service(guild)
+    assert service._resolve_handler_candidates(guild) == [eligible]
+
+
+def test_bots_and_configured_users_are_always_excluded() -> None:
+    role = FakeRole(801)
+    bot = FakeMember(501, roles=[role], bot=True)
+    excluded_active = FakeMember(
+        502,
+        roles=[role],
+        voice=SimpleNamespace(channel=SimpleNamespace(id=1000)),
+    )
+    excluded_inactive = FakeMember(
+        503,
+        roles=[role],
+        voice=SimpleNamespace(channel=SimpleNamespace(id=900)),
+    )
+    guild = FakeGuild(roles=[role], members=[bot, excluded_active, excluded_inactive])
+    service = _service(
+        guild,
+        inactive_voice_channel_id=900,
+        excluded_user_ids=frozenset({502, 503}),
+    )
+
+    assert service._resolve_handler_candidates(guild) == []
+    assert asyncio.run(service.pick_staff(guild)) is None
+
+
+def test_inactive_voice_is_not_prioritized_but_remains_fallback_candidate() -> None:
+    role = FakeRole(801)
+    inactive = FakeMember(
+        501,
+        roles=[role],
+        voice=SimpleNamespace(channel=SimpleNamespace(id=900)),
+    )
+    no_voice = FakeMember(502, roles=[role])
+    guild = FakeGuild(roles=[role], members=[inactive, no_voice])
+    service = _service(guild, inactive_voice_channel_id=900)
+
+    candidates = service._resolve_handler_candidates(guild)
+    assert service._resolve_active_voice_candidates(candidates) == []
+    assert asyncio.run(service.pick_staff(guild)) is inactive
+
+
+def test_active_voice_wins_over_inactive_voice() -> None:
+    role = FakeRole(801)
+    inactive = FakeMember(
+        501,
+        roles=[role],
+        voice=SimpleNamespace(channel=SimpleNamespace(id=900)),
+    )
+    active = FakeMember(
+        502,
+        roles=[role],
+        voice=SimpleNamespace(channel=SimpleNamespace(id=901)),
+    )
+    guild = FakeGuild(roles=[role], members=[inactive, active])
+
+    assert (
+        asyncio.run(_service(guild, inactive_voice_channel_id=900).pick_staff(guild))
+        is active
+    )
+
+
+def test_missing_voice_and_missing_voice_channel_are_safe() -> None:
+    role = FakeRole(801)
+    missing_voice = FakeMember(501, roles=[role], voice=None)
+    missing_channel = FakeMember(
+        502,
+        roles=[role],
+        voice=SimpleNamespace(channel=None),
+    )
+    guild = FakeGuild(roles=[role], members=[missing_voice, missing_channel])
+    service = _service(guild)
+
+    assert service._resolve_active_voice_candidates([missing_voice, missing_channel]) == []
+
+
+def test_unset_inactive_voice_id_keeps_voice_candidate_eligible() -> None:
+    role = FakeRole(801)
+    in_voice = FakeMember(
+        501,
+        roles=[role],
+        voice=SimpleNamespace(channel=SimpleNamespace(id=900)),
+    )
+    guild = FakeGuild(roles=[role], members=[in_voice])
+
+    assert asyncio.run(_service(guild).pick_staff(guild)) is in_voice
+
+
+def test_previous_handler_is_avoided_when_multiple_candidates_exist() -> None:
+    role = FakeRole(801)
+    first = FakeMember(501, roles=[role])
+    second = FakeMember(502, roles=[role])
+    observed = []
+
+    def choose(values):
+        observed.append([member.id for member in values])
+        return values[0]
+
+    guild = FakeGuild(roles=[role], members=[first, second])
+    service = _service(guild, choice=choose)
+
+    assert asyncio.run(service.pick_staff(guild)) is first
+    assert asyncio.run(service.pick_staff(guild)) is second
+    assert observed == [[501, 502], [502]]
+    assert service._last_handler_id == 502
+
+
+def test_previous_handler_is_avoided_within_active_voice_candidates() -> None:
+    role = FakeRole(801)
+    first = FakeMember(
+        501,
+        roles=[role],
+        voice=SimpleNamespace(channel=SimpleNamespace(id=1000)),
+    )
+    second = FakeMember(
+        502,
+        roles=[role],
+        voice=SimpleNamespace(channel=SimpleNamespace(id=1001)),
+    )
+    not_in_voice = FakeMember(503, roles=[role])
+    guild = FakeGuild(roles=[role], members=[first, second, not_in_voice])
+    service = _service(guild, choice=lambda values: values[0])
+
+    assert asyncio.run(service.pick_staff(guild)) is first
+    assert asyncio.run(service.pick_staff(guild)) is second
+
+
+def test_single_candidate_can_repeat_in_voice_and_fallback_groups() -> None:
+    role = FakeRole(801)
+    member = FakeMember(501, roles=[role])
+    guild = FakeGuild(roles=[role], members=[member])
+    service = _service(guild)
+
+    assert asyncio.run(service.pick_staff(guild)) is member
+    assert asyncio.run(service.pick_staff(guild)) is member
+
+    member.voice = SimpleNamespace(channel=SimpleNamespace(id=1000))
+    assert asyncio.run(service.pick_staff(guild)) is member
 
 
 def test_existing_welcome_category_is_reused() -> None:
@@ -138,6 +299,18 @@ def test_missing_staff_uses_admin_and_sends_three_messages() -> None:
     assert "<@700>" in channel.sent[0][0][0]
     assert channel.sent[1][1]["embed"] == "welcome-embed"
     assert channel.sent[2][1]["view"] == "question-view"
+
+
+def test_excluded_admin_id_remains_emergency_fallback() -> None:
+    role = FakeRole(801)
+    excluded_admin = FakeMember(700, roles=[role])
+    guild = FakeGuild(roles=[role], members=[excluded_admin])
+    service = _service(guild, excluded_user_ids=frozenset({700}))
+
+    channel = _create(service, FakeMember(500))
+
+    assert service.get_answers(500)["staff_id"] == 700
+    assert "<@700>" in channel.sent[0][0][0]
 
 
 def test_send_forbidden_logs_permissions_and_releases_processing(

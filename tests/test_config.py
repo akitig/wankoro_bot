@@ -34,6 +34,57 @@ def test_optional_ids_are_none_when_unset(monkeypatch) -> None:
     assert config.valo_role_log_channel_id is None
 
 
+def test_welcome_handler_config_values_are_typed(monkeypatch) -> None:
+    monkeypatch.setenv("APPLICATION_ID", "101")
+    monkeypatch.setenv("GUILD_ID", "202")
+    monkeypatch.setenv("WELCOME_HANDLER_ROLE_ID", "1451758143636901960")
+    monkeypatch.setenv("WELCOME_INACTIVE_VOICE_CHANNEL_ID", "940190873101172746")
+    monkeypatch.setenv(
+        "WELCOME_HANDLER_EXCLUDED_USER_IDS",
+        " 780783001218842655, ,123456789012345678,780783001218842655 ",
+    )
+
+    config = get_config()
+
+    assert config.welcome_handler_role_id == 1451758143636901960
+    assert config.welcome_inactive_voice_channel_id == 940190873101172746
+    assert config.welcome_handler_excluded_user_ids == frozenset(
+        {780783001218842655, 123456789012345678}
+    )
+    assert isinstance(config.welcome_handler_excluded_user_ids, frozenset)
+
+
+def test_welcome_handler_optional_config_defaults(monkeypatch) -> None:
+    monkeypatch.setenv("APPLICATION_ID", "101")
+    monkeypatch.setenv("GUILD_ID", "202")
+    monkeypatch.delenv("WELCOME_HANDLER_ROLE_ID", raising=False)
+    monkeypatch.delenv("WELCOME_INACTIVE_VOICE_CHANNEL_ID", raising=False)
+    monkeypatch.setenv("WELCOME_HANDLER_EXCLUDED_USER_IDS", "")
+
+    config = get_config()
+
+    assert config.welcome_handler_role_id is None
+    assert config.welcome_inactive_voice_channel_id is None
+    assert config.welcome_handler_excluded_user_ids == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("WELCOME_HANDLER_ROLE_ID", "invalid"),
+        ("WELCOME_INACTIVE_VOICE_CHANNEL_ID", "-1"),
+        ("WELCOME_HANDLER_EXCLUDED_USER_IDS", "123,invalid"),
+    ],
+)
+def test_invalid_welcome_handler_ids_are_rejected(monkeypatch, name, value) -> None:
+    monkeypatch.setenv("APPLICATION_ID", "101")
+    monkeypatch.setenv("GUILD_ID", "202")
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(ValueError, match=name):
+        get_config()
+
+
 def test_config_is_typed_and_cached(monkeypatch) -> None:
     monkeypatch.setenv("APPLICATION_ID", "101")
     monkeypatch.setenv("GUILD_ID", "202")
