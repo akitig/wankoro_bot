@@ -13,11 +13,13 @@ RUNTIME_ENV_NAMES = (
     "RUNTIME_DATA_DIR",
     "STATE_DIRECTORY",
     "XDG_DATA_HOME",
+    "HOME",
     "VALO_CHECK_DATA_PATH",
     "OMIKUJI_POINTS_PATH",
     "JOYA_DATA_PATH",
     "XMAS_GACHA_STATE",
     "VALOMAP_BANS_PATH",
+    "BUMP_PANEL_STATE_PATH",
 )
 
 
@@ -25,7 +27,6 @@ RUNTIME_ENV_NAMES = (
 def isolated_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     get_config.cache_clear()
     monkeypatch.setattr(config_module, "load_dotenv", lambda: None)
-    monkeypatch.setattr(config_module.Path, "home", lambda: tmp_path / "home")
     monkeypatch.setenv("APPLICATION_ID", "1")
     monkeypatch.setenv("GUILD_ID", "1")
     for name in RUNTIME_ENV_NAMES:
@@ -50,6 +51,32 @@ def test_runtime_data_dir_precedence(tmp_path: Path) -> None:
     assert resolve_runtime_data_dir(environ, tmp_path / "home") == (
         tmp_path / "home" / ".local" / "share" / "wankoro-bot"
     )
+
+
+def test_runtime_data_dir_falls_back_to_current_data_directory(tmp_path: Path) -> None:
+    data_dir = tmp_path / "checkout" / "data"
+
+    assert resolve_runtime_data_dir({}, None, data_dir) == data_dir
+
+
+def test_config_uses_home_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+
+    assert get_config().valo_check_data_path == (
+        home / ".local" / "share" / "wankoro-bot" / "valo_check_completed.json"
+    )
+
+
+def test_config_uses_data_fallback_without_home(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("HOME", raising=False)
+
+    assert get_config().valo_check_data_path == Path("data/valo_check_completed.json")
 
 
 def test_runtime_data_dir_ignores_empty_values_and_strips_whitespace(tmp_path: Path) -> None:
@@ -81,6 +108,7 @@ def test_state_directory_is_used_as_provided(tmp_path: Path) -> None:
         ("JOYA_DATA_PATH", "joya_data_path", "2026_joya_state.json"),
         ("XMAS_GACHA_STATE", "xmas_gacha_state_path", "xmas_gacha_state.json"),
         ("VALOMAP_BANS_PATH", "valomap_bans_path", "valomap_bans.json"),
+        ("BUMP_PANEL_STATE_PATH", "bump_panel_state_path", "bump_panel_state.json"),
     ],
 )
 def test_config_runtime_paths_use_root_when_individual_path_is_missing(
@@ -105,16 +133,20 @@ def test_config_runtime_paths_use_root_when_individual_path_is_missing(
         ("JOYA_DATA_PATH", "joya_data_path"),
         ("XMAS_GACHA_STATE", "xmas_gacha_state_path"),
         ("VALOMAP_BANS_PATH", "valomap_bans_path"),
+        ("BUMP_PANEL_STATE_PATH", "bump_panel_state_path"),
     ],
 )
-@pytest.mark.parametrize("explicit_path", [Path("relative/state.json"), Path("/tmp/state.json")])
+@pytest.mark.parametrize("absolute", [False, True])
 def test_individual_path_overrides_runtime_root_without_changing_path_kind(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     environment_name: str,
     field_name: str,
-    explicit_path: Path,
+    absolute: bool,
 ) -> None:
+    explicit_path = tmp_path / "absolute" / "state.json" if absolute else Path(
+        "relative/state.json"
+    )
     monkeypatch.setenv("RUNTIME_DATA_DIR", str(tmp_path / "runtime"))
     monkeypatch.setenv(environment_name, str(explicit_path))
 
@@ -154,6 +186,7 @@ def test_config_creation_has_no_runtime_filesystem_side_effects(
         ("JOYA_DATA_PATH", "joya_data_path", "2026_joya_state.json"),
         ("XMAS_GACHA_STATE", "xmas_gacha_state_path", "xmas_gacha_state.json"),
         ("VALOMAP_BANS_PATH", "valomap_bans_path", "valomap_bans.json"),
+        ("BUMP_PANEL_STATE_PATH", "bump_panel_state_path", "bump_panel_state.json"),
     ],
 )
 def test_empty_individual_path_uses_runtime_root(

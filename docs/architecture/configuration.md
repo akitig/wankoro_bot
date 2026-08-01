@@ -61,13 +61,15 @@ Repository APIs; a DI container is not needed for the current application.
 | Christmas event | `XMAS_GACHA_CSV`, `XMAS_GACHA_STATE`, `XMAS_GACHA_CHANNEL_ID`, `XMAS_GACHA_CUTOFF` |
 | New Year bell event | `JOYA_DATA_PATH`, `JOYA_MIN_SEC`, `JOYA_MAX_SEC`, `JOYA_WINNER_ROLE_ID`, `JOYA_CHANNEL_ID` |
 | Omikuji event | `OMIKUJI_POINTS_PATH`, `OMIKUJI_REST_VC_ID`, `OMIKUJI_RESETTER_USER_ID`, `OMIKUJI_PANEL_CHANNEL_ID` |
+| DISBOARD BUMP panel | `BUMP_CHANNEL_ID`, `DISBOARD_BOT_ID`, `DISBOARD_BUMP_COMMAND_ID`, `BUMP_COOLDOWN_SECONDS`, `BUMP_PANEL_STATE_PATH` |
 
 Mutable runtime paths use an explicitly configured feature path first. Otherwise,
 their root is resolved in this order: `RUNTIME_DATA_DIR`, `STATE_DIRECTORY`,
-`XDG_DATA_HOME/wankoro-bot`, then `~/.local/share/wankoro-bot`. Empty root values
-are ignored and surrounding whitespace is removed. `STATE_DIRECTORY` is the
-absolute path supplied by systemd and is used directly; Config does not rebuild
-it below `/var/lib`.
+`XDG_DATA_HOME/wankoro-bot`, `~/.local/share/wankoro-bot`, then the existing
+working-directory-relative `data/` directory when no home is available. Empty
+root values are ignored and surrounding whitespace is removed.
+`STATE_DIRECTORY` is the absolute path supplied by systemd and is used directly;
+Config does not rebuild it below `/var/lib`.
 
 Existing feature-specific path whitespace behavior is preserved. Omikuji and
 Xmas paths are stripped; Joya and VALORANT check paths remain literal. An empty
@@ -88,6 +90,7 @@ All JSON and CSV paths exposed through Config use `pathlib.Path`.
 | `xmas_gacha_state_path` | `xmas_gacha_state.json` |
 | `joya_data_path` | `2026_joya_state.json` |
 | `omikuji_points_path` | `2026_omikujii_points.json` |
+| `bump_panel_state_path` | `bump_panel_state.json` |
 
 Resolving Config paths only constructs `Path` values. It does not create the
 runtime directory or any JSON file.

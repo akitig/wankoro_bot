@@ -19,7 +19,8 @@ PRODUCTION_DATA_DIR = Path("/home/akitig/Desktop/Bot/Toureikai/Wankorobot/data")
 
 def resolve_runtime_data_dir(
     environ: Mapping[str, str],
-    home: Path,
+    home: Path | None,
+    data_dir: Path = Path("data"),
 ) -> Path:
     """Resolve the directory containing mutable application state."""
 
@@ -31,7 +32,9 @@ def resolve_runtime_data_dir(
     xdg_data_home = environ.get("XDG_DATA_HOME")
     if xdg_data_home is not None and xdg_data_home.strip():
         return Path(xdg_data_home.strip()) / "wankoro-bot"
-    return home / ".local" / "share" / "wankoro-bot"
+    if home is not None:
+        return home / ".local" / "share" / "wankoro-bot"
+    return data_dir
 
 
 def resolve_runtime_path(
@@ -68,6 +71,11 @@ def _int_with_default(name: str, default: int) -> int:
         return int(value)
     except ValueError:
         return default
+
+
+def _positive_int_with_default(name: str, default: int) -> int:
+    value = _int_with_default(name, default)
+    return value if value > 0 else default
 
 
 def _string_with_default(name: str, default: str, *, strip: bool = False) -> str:
@@ -151,6 +159,12 @@ class Config:
     valo_recruit_enjoy_role_id: int | None
     valo_recruit_cooldown_seconds: int
 
+    bump_channel_id: int | None
+    disboard_bot_id: int | None
+    disboard_bump_command_id: int | None
+    bump_cooldown_seconds: int
+    bump_panel_state_path: Path
+
     def require_id(self, value: int | None, environment_name: str) -> int:
         """Return a required Cog setting or fail when that Cog is constructed."""
 
@@ -161,7 +175,9 @@ class Config:
 
 def _load_config() -> Config:
     load_dotenv()
-    runtime_data_dir = resolve_runtime_data_dir(os.environ, Path.home())
+    home_value = os.environ.get("HOME")
+    home = Path(home_value.strip()) if home_value and home_value.strip() else None
+    runtime_data_dir = resolve_runtime_data_dir(os.environ, home)
     return Config(
         discord_token=os.getenv("DISCORD_TOKEN"),
         application_id=_required_int("APPLICATION_ID"),
@@ -268,6 +284,19 @@ def _load_config() -> Config:
         valo_recruit_cooldown_seconds=_int_with_default(
             "VALO_RECRUIT_COOLDOWN_SECONDS",
             300,
+        ),
+        bump_channel_id=_optional_int("BUMP_CHANNEL_ID"),
+        disboard_bot_id=_optional_int("DISBOARD_BOT_ID"),
+        disboard_bump_command_id=_optional_int("DISBOARD_BUMP_COMMAND_ID"),
+        bump_cooldown_seconds=_positive_int_with_default(
+            "BUMP_COOLDOWN_SECONDS",
+            7200,
+        ),
+        bump_panel_state_path=resolve_runtime_path(
+            explicit_value=os.getenv("BUMP_PANEL_STATE_PATH"),
+            runtime_dir=runtime_data_dir,
+            filename="bump_panel_state.json",
+            strip=True,
         ),
     )
 

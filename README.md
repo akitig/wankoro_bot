@@ -74,7 +74,7 @@ BAN設定は `valomap_bans.json` に永続保存され、Bot再起動後も保�
 > ファイル：`main.py`
 
 Bot全体のエントリーポイント。  
-`.env` の設定を読み込み、以下の10個のCogを起動します。
+`.env` の設定を読み込み、以下の11個のCogを起動します。
 
 ```bash
 cogs/welcome
@@ -87,7 +87,13 @@ cogs/dm_forward
 cogs/2025_xmas_gacha
 cogs/2026_joya_gacha
 cogs/2026_omikuji_gacha
+cogs/bump_panel
 ```
+
+`bump_panel`はDISBOARDのBUMP成功を検知し、2時間後まで1回だけ待機する
+常設案内パネルです。Bot自身は`/bump`を実行せず、ボタンはユーザーへCommand
+メンションをephemeral表示します。Command ID未設定時は手動で`/bump`を選ぶよう
+案内します。
 
 起動時には全スラッシュコマンドを自動同期し、  
 権限エラーやロード失敗もコンソールに出力されます。
@@ -182,7 +188,7 @@ EnvironmentFile=/home/akitig/Desktop/Bot/Toureikai/Wankorobot/.env
 | ライブラリ | discord.py v2.x / aiohttp / python-dotenv |
 | データ保存 | Repository経由のruntime JSON・.env |
 | 実行方式 | systemd 常駐 or CLI実行 |
-| 構造 | 10 Cog / Service層 / Repository層 / storage層 |
+| 構造 | 11 Cog / Service層 / Repository層 / storage層 |
 
 ---
 
@@ -191,7 +197,7 @@ EnvironmentFile=/home/akitig/Desktop/Bot/Toureikai/Wankorobot/.env
 ```text
 cogs/          Discord Command・Interaction・View境界
 services/      業務ロジックとDiscord API操作
-repositories/  機能ごとの永続状態と保存API（5 Repository）
+repositories/  機能ごとの永続状態と保存API（6 Repository）
 storage/       共通のJSON読込・atomic保存
 tests/         characterization・境界・Repository・構造テスト
 ```
