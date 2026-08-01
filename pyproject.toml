@@ -8,6 +8,7 @@ dependencies = [
     "discord.py==2.6.4",
     "aiohttp==3.12.14",
     "python-dotenv==1.2.1",
+    "jpholiday==1.0.2",
 ]
 
 [tool.pytest.ini_options]

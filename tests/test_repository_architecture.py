@@ -17,6 +17,7 @@ REPOSITORY_PATHS = tuple(
         "valomap_repository.py",
         "valocheck_repository.py",
         "bump_panel_repository.py",
+        "availability_poll_repository.py",
     )
 )
 SERVICE_PATHS = tuple(sorted((ROOT / "services").glob("*.py")))

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 import config as config_module
-from config import get_config
+from config import get_config, parse_time_windows
 
 
 @pytest.fixture(autouse=True)
@@ -83,3 +83,61 @@ def test_bump_panel_optional_command_and_cooldown_fallback(monkeypatch) -> None:
 
     assert config.disboard_bump_command_id is None
     assert config.bump_cooldown_seconds == 7200
+
+
+def test_availability_poll_config(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("APPLICATION_ID", "101")
+    monkeypatch.setenv("GUILD_ID", "202")
+    monkeypatch.setenv("AVAILABILITY_POLL_CHANNEL_ID", "10")
+    monkeypatch.setenv("AVAILABILITY_POLL_AUDIT_GUILD_ID", "30")
+    monkeypatch.setenv("AVAILABILITY_POLL_AUDIT_CHANNEL_ID", "40")
+    monkeypatch.setenv("AVAILABILITY_POLL_TIMEZONE", "Asia/Tokyo")
+    monkeypatch.setenv(
+        "AVAILABILITY_POLL_WEEKDAY_WINDOWS",
+        " 22:00-23:00 , 19:30-20:15 ",
+    )
+    monkeypatch.setenv("AVAILABILITY_POLL_HOLIDAY_WINDOWS", "12:00-13:30")
+    monkeypatch.setenv("RUNTIME_DATA_DIR", str(tmp_path))
+
+    config = get_config()
+
+    assert config.availability_poll_channel_id == 10
+    assert config.availability_poll_audit_guild_id == 30
+    assert config.availability_poll_audit_channel_id == 40
+    assert config.availability_poll_timezone == "Asia/Tokyo"
+    assert config.availability_poll_weekday_windows == (
+        "19:30-20:15",
+        "22:00-23:00",
+    )
+    assert config.availability_poll_holiday_windows == ("12:00-13:30",)
+    assert config.availability_poll_state_path == tmp_path / "availability_poll_state.json"
+
+
+def test_availability_poll_defaults(monkeypatch) -> None:
+    monkeypatch.setenv("APPLICATION_ID", "101")
+    monkeypatch.setenv("GUILD_ID", "202")
+    for name in (
+        "AVAILABILITY_POLL_TIMEZONE",
+        "AVAILABILITY_POLL_WEEKDAY_WINDOWS",
+        "AVAILABILITY_POLL_HOLIDAY_WINDOWS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    config = get_config()
+
+    assert config.availability_poll_timezone == "Asia/Tokyo"
+    assert config.availability_poll_weekday_windows == ("20:00-21:00",)
+    assert config.availability_poll_holiday_windows == (
+        "13:00-14:00",
+        "20:00-21:00",
+    )
+
+
+def test_invalid_availability_poll_config_is_rejected(monkeypatch) -> None:
+    monkeypatch.setenv("APPLICATION_ID", "101")
+    monkeypatch.setenv("GUILD_ID", "202")
+    monkeypatch.setenv("AVAILABILITY_POLL_WEEKDAY_WINDOWS", "20:00-19:00")
+    with pytest.raises(ValueError):
+        get_config()
+
+    assert parse_time_windows("20:00-21:00") == ("20:00-21:00",)

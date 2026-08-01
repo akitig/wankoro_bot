@@ -20,6 +20,7 @@ RUNTIME_ENV_NAMES = (
     "XMAS_GACHA_STATE",
     "VALOMAP_BANS_PATH",
     "BUMP_PANEL_STATE_PATH",
+    "AVAILABILITY_POLL_STATE_PATH",
 )
 
 
@@ -109,6 +110,11 @@ def test_state_directory_is_used_as_provided(tmp_path: Path) -> None:
         ("XMAS_GACHA_STATE", "xmas_gacha_state_path", "xmas_gacha_state.json"),
         ("VALOMAP_BANS_PATH", "valomap_bans_path", "valomap_bans.json"),
         ("BUMP_PANEL_STATE_PATH", "bump_panel_state_path", "bump_panel_state.json"),
+        (
+            "AVAILABILITY_POLL_STATE_PATH",
+            "availability_poll_state_path",
+            "availability_poll_state.json",
+        ),
     ],
 )
 def test_config_runtime_paths_use_root_when_individual_path_is_missing(
@@ -134,6 +140,7 @@ def test_config_runtime_paths_use_root_when_individual_path_is_missing(
         ("XMAS_GACHA_STATE", "xmas_gacha_state_path"),
         ("VALOMAP_BANS_PATH", "valomap_bans_path"),
         ("BUMP_PANEL_STATE_PATH", "bump_panel_state_path"),
+        ("AVAILABILITY_POLL_STATE_PATH", "availability_poll_state_path"),
     ],
 )
 @pytest.mark.parametrize("absolute", [False, True])
@@ -187,6 +194,11 @@ def test_config_creation_has_no_runtime_filesystem_side_effects(
         ("XMAS_GACHA_STATE", "xmas_gacha_state_path", "xmas_gacha_state.json"),
         ("VALOMAP_BANS_PATH", "valomap_bans_path", "valomap_bans.json"),
         ("BUMP_PANEL_STATE_PATH", "bump_panel_state_path", "bump_panel_state.json"),
+        (
+            "AVAILABILITY_POLL_STATE_PATH",
+            "availability_poll_state_path",
+            "availability_poll_state.json",
+        ),
     ],
 )
 def test_empty_individual_path_uses_runtime_root(
