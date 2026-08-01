@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import cogs.welcome as welcome_module
 from cogs.welcome import Welcome
 from services.welcome_service import WelcomeService
 from tests.helpers.discord_fakes import (
@@ -25,9 +26,6 @@ def _cog(guild: FakeGuild) -> Welcome:
     cog.bot = FakeBot(guild)
     cog.GUILD_ID = guild.id
     cog.ADMIN_ID = 700
-    cog.ROLE_A = 801
-    cog.ROLE_B = 802
-    cog.ROLE_C = 803
     cog.WELCOME_CATEGORY_NAME = "welcome"
     cog.LOG_CATEGORY_NAME = "log"
     cog.MANAGER_ROLE_IDS = {900}
@@ -35,7 +33,7 @@ def _cog(guild: FakeGuild) -> Welcome:
         cog.bot,
         guild_id=cog.GUILD_ID,
         admin_id=cog.ADMIN_ID,
-        staff_role_ids=(cog.ROLE_A, cog.ROLE_B, cog.ROLE_C),
+        handler_role_id=801,
     )
     return cog
 
@@ -58,6 +56,65 @@ def test_configured_guild_is_used_and_welcome_messages_are_sent() -> None:
     assert channel.name == "welcome-newmember"
     assert len(channel.sent) == 3
     assert member.mention in channel.sent[0][0][0]
+
+
+def test_cog_injects_welcome_handler_config(tmp_path, monkeypatch) -> None:
+    captured = {}
+
+    class ServiceFake:
+        def __init__(self, bot, **kwargs):
+            captured["bot"] = bot
+            captured.update(kwargs)
+
+    config = SimpleNamespace(
+        guild_id=100,
+        admin_id=700,
+        welcome_handler_role_id=801,
+        welcome_inactive_voice_channel_id=900,
+        welcome_handler_excluded_user_ids=frozenset({600}),
+        leave_log_channel_id=50,
+        manager_role_ids=frozenset({901}),
+        require_id=lambda value, _name: value,
+    )
+    bot = FakeBot(FakeGuild(guild_id=100))
+    monkeypatch.setattr(welcome_module, "get_config", lambda: config)
+    monkeypatch.setattr(welcome_module, "WelcomeService", ServiceFake)
+
+    Welcome(bot)
+
+    assert captured["handler_role_id"] == 801
+    assert captured["inactive_voice_channel_id"] == 900
+    assert captured["excluded_user_ids"] == frozenset({600})
+
+
+def test_missing_handler_role_fails_when_cog_is_created(monkeypatch) -> None:
+    config = SimpleNamespace(
+        guild_id=100,
+        admin_id=700,
+        welcome_handler_role_id=None,
+        welcome_inactive_voice_channel_id=None,
+        welcome_handler_excluded_user_ids=frozenset(),
+        leave_log_channel_id=50,
+        manager_role_ids=frozenset(),
+    )
+
+    def require_id(value, name):
+        if value is None:
+            raise RuntimeError(f"Missing environment variable: {name}")
+        return value
+
+    config.require_id = require_id
+    monkeypatch.setattr(welcome_module, "get_config", lambda: config)
+
+    with pytest.raises(RuntimeError, match="WELCOME_HANDLER_ROLE_ID"):
+        Welcome(FakeBot(FakeGuild(guild_id=100)))
+
+
+def test_cog_does_not_duplicate_last_handler_state() -> None:
+    cog = _cog(FakeGuild(guild_id=100))
+
+    assert not hasattr(cog, "_last_handler_id")
+    assert hasattr(cog.service, "_last_handler_id")
 
 
 def test_staff_role_selects_welcome_staff(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -17,9 +17,10 @@ class Welcome(commands.Cog):
         config = get_config()
         self.GUILD_ID = config.guild_id
         self.ADMIN_ID = config.require_id(config.admin_id, "ADMIN_ID")
-        self.ROLE_A = config.require_id(config.welcome_role_a, "ROLE_A")
-        self.ROLE_B = config.require_id(config.welcome_role_b, "ROLE_B")
-        self.ROLE_C = config.require_id(config.welcome_role_c, "ROLE_C")
+        welcome_handler_role_id = config.require_id(
+            config.welcome_handler_role_id,
+            "WELCOME_HANDLER_ROLE_ID",
+        )
         self.LEAVE_LOG_CHANNEL_ID = config.require_id(
             config.leave_log_channel_id,
             "LEAVE_LOG_CHANNEL_ID",
@@ -32,7 +33,9 @@ class Welcome(commands.Cog):
             bot,
             guild_id=self.GUILD_ID,
             admin_id=self.ADMIN_ID,
-            staff_role_ids=(self.ROLE_A, self.ROLE_B, self.ROLE_C),
+            handler_role_id=welcome_handler_role_id,
+            inactive_voice_channel_id=config.welcome_inactive_voice_channel_id,
+            excluded_user_ids=config.welcome_handler_excluded_user_ids,
         )
 
     # ------------------------------------------------------

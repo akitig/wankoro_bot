@@ -21,16 +21,21 @@ class WelcomeService:
         *,
         guild_id: int,
         admin_id: int,
-        staff_role_ids: tuple[int, int, int],
+        handler_role_id: int,
+        inactive_voice_channel_id: int | None = None,
+        excluded_user_ids: frozenset[int] = frozenset(),
         choice: Callable[[list[Any]], Any] = random.choice,
     ) -> None:
         self.bot = bot
         self.guild_id = guild_id
         self.admin_id = admin_id
-        self.staff_role_ids = staff_role_ids
+        self._handler_role_id = handler_role_id
+        self._inactive_voice_channel_id = inactive_voice_channel_id
+        self._excluded_user_ids = excluded_user_ids
         self._choice = choice
         self.user_answers: dict[int, dict[str, Any]] = {}
         self.processing_users: set[int] = set()
+        self._last_handler_id: int | None = None
 
     def is_processing(self, member_id: int) -> bool:
         return member_id in self.processing_users
@@ -50,23 +55,57 @@ class WelcomeService:
             times.append(label)
         return times
 
+    def _resolve_handler_candidates(self, guild: Any) -> list[Any]:
+        candidates: list[Any] = []
+        seen: set[int] = set()
+        for member in guild.members:
+            member_id = member.id
+            if member_id in seen:
+                continue
+            seen.add(member_id)
+            if getattr(member, "bot", False):
+                continue
+            if member_id in self._excluded_user_ids:
+                continue
+            if not any(
+                getattr(role, "id", None) == self._handler_role_id
+                for role in getattr(member, "roles", ())
+            ):
+                continue
+            candidates.append(member)
+        return candidates
+
+    def _resolve_active_voice_candidates(self, candidates: list[Any]) -> list[Any]:
+        active = []
+        for member in candidates:
+            voice = getattr(member, "voice", None)
+            channel = getattr(voice, "channel", None)
+            if channel is None:
+                continue
+            if (
+                self._inactive_voice_channel_id is not None
+                and getattr(channel, "id", None) == self._inactive_voice_channel_id
+            ):
+                continue
+            active.append(member)
+        return active
+
+    def _choose_handler(self, candidates: list[Any]) -> Any:
+        selectable = candidates
+        if len(candidates) >= 2:
+            selectable = [
+                member for member in candidates if member.id != self._last_handler_id
+            ]
+        selected = self._choice(selectable)
+        self._last_handler_id = selected.id
+        return selected
+
     async def pick_staff(self, guild: Any) -> Any | None:
-        roles = [guild.get_role(role_id) for role_id in self.staff_role_ids]
-        candidates = [
-            member
-            for member in guild.members
-            if any(role in member.roles for role in roles)
-        ]
+        candidates = self._resolve_handler_candidates(guild)
         if not candidates:
             return None
-
-        voice_candidates = [
-            member
-            for voice_channel in guild.voice_channels
-            for member in voice_channel.members
-            if member in candidates
-        ]
-        return self._choice(voice_candidates or candidates)
+        voice_candidates = self._resolve_active_voice_candidates(candidates)
+        return self._choose_handler(voice_candidates or candidates)
 
     @staticmethod
     def _channel_name(guild: Any, member: Any) -> str:
@@ -128,6 +167,8 @@ class WelcomeService:
             staff = await self.pick_staff(guild)
             staff_id = staff.id if staff else self.admin_id
             staff_mention = staff.mention if staff else f"<@{self.admin_id}>"
+            if staff is None:
+                self._last_handler_id = self.admin_id
             self.user_answers[member.id] = {"staff_id": staff_id}
 
             category = discord.utils.get(guild.categories, name="welcome")

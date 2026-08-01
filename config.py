@@ -98,6 +98,36 @@ def _id_set(name: str) -> frozenset[int]:
     return frozenset(int(item) for item in value.split(",") if item.strip().isdigit())
 
 
+def _strict_optional_id(name: str) -> int | None:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return None
+    try:
+        parsed = int(value.strip())
+    except ValueError as error:
+        raise ValueError(f"{name} must be a positive integer") from error
+    if parsed <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return parsed
+
+
+def _strict_id_set(name: str) -> frozenset[int]:
+    value = os.getenv(name, "")
+    parsed: set[int] = set()
+    for item in value.split(","):
+        stripped = item.strip()
+        if not stripped:
+            continue
+        try:
+            identifier = int(stripped)
+        except ValueError as error:
+            raise ValueError(f"{name} must contain positive integer IDs") from error
+        if identifier <= 0:
+            raise ValueError(f"{name} must contain positive integer IDs")
+        parsed.add(identifier)
+    return frozenset(parsed)
+
+
 def _reaction_role_values() -> Mapping[str, str]:
     values = {
         key: value
@@ -164,6 +194,9 @@ class Config:
     welcome_role_a: int | None
     welcome_role_b: int | None
     welcome_role_c: int | None
+    welcome_handler_role_id: int | None
+    welcome_inactive_voice_channel_id: int | None
+    welcome_handler_excluded_user_ids: frozenset[int]
     leave_log_channel_id: int | None
     dm_forward_user_id: int | None
 
@@ -242,6 +275,13 @@ def _load_config() -> Config:
         welcome_role_a=_optional_int("ROLE_A"),
         welcome_role_b=_optional_int("ROLE_B"),
         welcome_role_c=_optional_int("ROLE_C"),
+        welcome_handler_role_id=_strict_optional_id("WELCOME_HANDLER_ROLE_ID"),
+        welcome_inactive_voice_channel_id=_strict_optional_id(
+            "WELCOME_INACTIVE_VOICE_CHANNEL_ID"
+        ),
+        welcome_handler_excluded_user_ids=_strict_id_set(
+            "WELCOME_HANDLER_EXCLUDED_USER_IDS"
+        ),
         leave_log_channel_id=_optional_int("LEAVE_LOG_CHANNEL_ID"),
         dm_forward_user_id=_optional_int("DM_FORWARD_USER_ID"),
         reaction_role_message_ids=_id_set("REACTION_ROLE_MESSAGE_IDS"),

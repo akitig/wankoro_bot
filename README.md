@@ -14,8 +14,11 @@
 Botが以下の手順でオンボーディングを行います。
 
 - 会長の挨拶メッセージとクイズ形式の自己紹介（年齢／性別／活動時間帯）  
-- ランダムに担当スタッフを自動アサイン  
+- 通常VC参加状況と直前担当者を考慮して担当スタッフを自動アサイン
 - 管理者コマンド `/welcome @ユーザー` でも手動作成可  
+- 案内担当は専用管理者ロール保持者から選び、通常VC参加者を優先します。休止VCは
+  VC優先の対象外とし、除外Userは候補に含めません。候補が複数の場合は直前担当者を
+  一時的に外して連続選出を防ぎます。
 - 完了後 `/ok` コマンドでチャンネルを `log` カテゴリへ移動  
 
 #### 📘 関連コマンド
@@ -145,13 +148,18 @@ GUILD_ID=xxxxxxxxxxxxxxxx
 ADMIN_ID=xxxxxxxxxxxxxxxx
 MANAGER_ROLE_IDS=1111111111,2222222222
 
-# ウェルカム担当ロール
+# 既存ロール設定
 ROLE_A=1111111111
 ROLE_B=2222222222
 ROLE_C=3333333333
 
+# ウェルカム案内担当の専用ロール・休止VC・除外User
+WELCOME_HANDLER_ROLE_ID=4444444444
+WELCOME_INACTIVE_VOICE_CHANNEL_ID=5555555555
+WELCOME_HANDLER_EXCLUDED_USER_IDS=6666666666,7777777777
+
 # カテゴリ名・ログ設定
-LEAVE_LOG_CHANNEL_ID=4444444444
+LEAVE_LOG_CHANNEL_ID=8888888888
 
 # リアクションロール設定例
 REACTION_ROLE_MESSAGE_IDS=5555555555
