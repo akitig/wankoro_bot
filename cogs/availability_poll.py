@@ -173,6 +173,42 @@ class AvailabilityPollCog(commands.Cog):
     ) -> None:
         await self.service.resume(interaction)
 
+    @app_commands.command(
+        name="availability_poll_post",
+        description="「いまひま？」アンケートを今すぐ投稿します",
+    )
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    async def availability_poll_post(
+        self,
+        interaction: discord.Interaction,
+    ) -> None:
+        await self.service.post_now(interaction)
+
+    @app_commands.command(
+        name="availability_poll_status",
+        description="「いまひま？」アンケートの現在状態を確認します",
+    )
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    async def availability_poll_status(
+        self,
+        interaction: discord.Interaction,
+    ) -> None:
+        await self.service.status(interaction)
+
+    @app_commands.command(
+        name="availability_poll_close",
+        description="現在の「いまひま？」アンケートを締め切ります",
+    )
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    async def availability_poll_close(
+        self,
+        interaction: discord.Interaction,
+    ) -> None:
+        await self.service.close_current(interaction)
+
     async def _command_error(
         self,
         interaction: discord.Interaction,
@@ -204,6 +240,30 @@ class AvailabilityPollCog(commands.Cog):
 
     @availability_poll_resume.error
     async def resume_error(
+        self,
+        interaction: discord.Interaction,
+        error: app_commands.AppCommandError,
+    ) -> None:
+        await self._command_error(interaction, error)
+
+    @availability_poll_post.error
+    async def post_error(
+        self,
+        interaction: discord.Interaction,
+        error: app_commands.AppCommandError,
+    ) -> None:
+        await self._command_error(interaction, error)
+
+    @availability_poll_status.error
+    async def status_error(
+        self,
+        interaction: discord.Interaction,
+        error: app_commands.AppCommandError,
+    ) -> None:
+        await self._command_error(interaction, error)
+
+    @availability_poll_close.error
+    async def close_error(
         self,
         interaction: discord.Interaction,
         error: app_commands.AppCommandError,
