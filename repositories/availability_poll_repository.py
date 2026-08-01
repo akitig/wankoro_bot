@@ -149,6 +149,25 @@ class AvailabilityPollRepository:
             }
         )
 
+    def restore_active_poll(self, active: ActivePoll | None) -> None:
+        """Restore an immutable snapshot after a failed persistence attempt."""
+
+        if active is None:
+            self._state["active_poll"] = None
+            return
+        self._state["active_poll"] = self._validate_active_poll(
+            {
+                "poll_id": active.poll_id,
+                "message_id": active.message_id,
+                "channel_id": active.channel_id,
+                "opened_at": active.opened_at.isoformat(),
+                "closed_at": (
+                    active.closed_at.isoformat() if active.closed_at is not None else None
+                ),
+                "answers": dict(active.answers),
+            }
+        )
+
     def close_active_poll(self, closed_at: datetime) -> None:
         _require_aware(closed_at, "closed_at")
         active = self._state["active_poll"]

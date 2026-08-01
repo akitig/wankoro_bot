@@ -255,13 +255,18 @@ class AvailabilityPollService:
         prefix = "Poll ID: "
         return text[len(prefix) :] if isinstance(text, str) and text.startswith(prefix) else None
 
-    async def _publish_poll(self, scheduled_at: datetime) -> bool:
+    async def _publish_poll(
+        self,
+        scheduled_at: datetime,
+        *,
+        poll_id: str | None = None,
+    ) -> bool:
         channel = self.bot.get_channel(self._channel_id)
         if channel is None:
             logger.warning("Availability poll channel is unavailable")
             return False
         await self._close_active_poll()
-        poll_id = scheduled_at.astimezone(self._timezone).isoformat()
+        poll_id = poll_id or scheduled_at.astimezone(self._timezone).isoformat()
         try:
             message = await channel.send(
                 embed=self.public_embed(poll_id, {answer: 0 for answer in ANSWERS}),
@@ -270,13 +275,19 @@ class AvailabilityPollService:
         except (discord.Forbidden, discord.HTTPException):
             logger.exception("Failed to post an availability poll")
             return False
-        self._repository.create_poll(
-            poll_id=poll_id,
-            message_id=message.id,
-            channel_id=self._channel_id,
-            opened_at=self._now(),
-        )
-        self._repository.save()
+        previous = self._repository.get_active_poll()
+        try:
+            self._repository.create_poll(
+                poll_id=poll_id,
+                message_id=message.id,
+                channel_id=self._channel_id,
+                opened_at=self._now(),
+            )
+            self._repository.save()
+        except Exception:
+            self._repository.restore_active_poll(previous)
+            logger.exception("Failed to save a posted availability poll")
+            return False
         logger.info("Availability poll posted")
         return True
 
@@ -474,6 +485,119 @@ class AvailabilityPollService:
             logger.info("Availability poll scheduler resumed")
             await self._send_admin_audit(interaction, "定期投稿を再開")
 
+    async def post_now(self, interaction: discord.Interaction) -> None:
+        """Post a poll without changing any regular scheduler controls."""
+
+        async with self._lock:
+            now = self._now()
+            poll_id = f"manual:{now.astimezone(self._timezone).isoformat()}"
+            try:
+                posted = await self._publish_poll(now, poll_id=poll_id)
+            except Exception:
+                logger.exception("Failed to manually post an availability poll")
+                posted = False
+            if not posted:
+                await self._respond(
+                    interaction,
+                    "アンケートを投稿できなかったよ。\nログを確認してください。",
+                )
+                return
+            await self._respond(
+                interaction,
+                "「いまひま？」アンケートを投稿したよ🐶\n"
+                "次の定期投稿予定はそのままだよ。",
+            )
+            await self._send_admin_audit(
+                interaction,
+                "アンケートを手動投稿",
+                poll_id=poll_id,
+            )
+
+    async def status(self, interaction: discord.Interaction) -> None:
+        """Report repository state without saving or touching the scheduler."""
+
+        async with self._lock:
+            paused = self._repository.is_paused()
+            skip = self._repository.should_skip_next_run()
+            next_run = self._repository.get_next_run_at()
+            active = self._repository.get_active_poll()
+            counts = self._repository.get_counts()
+
+            if paused and next_run is None:
+                next_run_text = "停止中"
+            elif next_run is None:
+                next_run_text = "未定"
+            else:
+                next_run_text = self._format_local_datetime(next_run)
+            lines = [
+                "🐶 「いまひま？」現在状態",
+                "",
+                f"定期投稿：{'無期限停止中' if paused else '稼働中'}",
+                f"次回のみスキップ：{'あり' if skip else 'なし'}",
+                f"次回定期投稿：{next_run_text}",
+                "",
+            ]
+            if active is None:
+                lines.append("現在のアンケート：なし")
+            else:
+                lines.extend(
+                    [
+                        "現在のアンケート："
+                        f"{'締切済み' if active.closed_at is not None else '受付中'}",
+                        f"Poll ID：{active.poll_id}",
+                        f"投稿日時：{self._format_local_datetime(active.opened_at)}",
+                        f"Message ID：{active.message_id}",
+                        "",
+                        "現在の結果：",
+                        "\n".join(
+                            f"{ICONS[answer]} {LABELS[answer]} {counts[answer]}人"
+                            for answer in ANSWERS
+                        ),
+                    ]
+                )
+            await self._respond(interaction, "\n".join(lines))
+
+    async def close_current(self, interaction: discord.Interaction) -> None:
+        """Close only the current poll while preserving regular scheduling."""
+
+        async with self._lock:
+            active = self._repository.get_active_poll()
+            if active is None:
+                await self._respond(
+                    interaction,
+                    "現在、締め切れるアンケートはないよ。",
+                )
+                return
+            if active.closed_at is not None:
+                await self._respond(
+                    interaction,
+                    "現在のアンケートは、すでに締め切られているよ。",
+                )
+                return
+            try:
+                await self._close_active_poll()
+            except Exception:
+                self._repository.restore_active_poll(active)
+                logger.exception("Failed to save the closed availability poll")
+                await self._respond(
+                    interaction,
+                    "アンケートを締め切れなかったよ。\nログを確認してください。",
+                )
+                return
+            await self._respond(
+                interaction,
+                "現在のアンケートを締め切ったよ🐶\n"
+                "次の定期投稿予定はそのままだよ。",
+            )
+            await self._send_admin_audit(
+                interaction,
+                "現在のアンケートを締切",
+                poll_id=active.poll_id,
+            )
+
+    def _format_local_datetime(self, value: datetime) -> str:
+        return value.astimezone(self._timezone).strftime("%Y/%m/%d %H:%M:%S %Z")
+
     async def _cancel_scheduler(self) -> None:
         task = self._scheduler_task
         self._scheduler_task = None
@@ -534,13 +658,16 @@ class AvailabilityPollService:
         self,
         interaction: discord.Interaction,
         operation: str,
+        *,
+        poll_id: str | None = None,
     ) -> None:
         user = interaction.user
+        poll_line = f"\nPoll ID：{poll_id}" if poll_id is not None else ""
         embed = discord.Embed(
             title="⚙️ 「いまひま？」運用ログ",
             description=(
                 f"操作：{operation}\n実行者：{user.mention}\n"
-                f"表示名：{user.display_name}\nUser ID：{user.id}\n"
+                f"表示名：{user.display_name}\nUser ID：{user.id}{poll_line}\n"
                 f"操作日時：{self._now().astimezone(self._timezone):%Y-%m-%d %H:%M:%S %Z}"
             ),
         )

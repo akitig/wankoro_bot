@@ -34,6 +34,15 @@ class ServiceFake:
     async def resume(self, interaction):
         self.calls.append(("resume", interaction))
 
+    async def post_now(self, interaction):
+        self.calls.append(("post", interaction))
+
+    async def status(self, interaction):
+        self.calls.append(("status", interaction))
+
+    async def close_current(self, interaction):
+        self.calls.append(("close", interaction))
+
 
 class BotFake:
     def __init__(self) -> None:
@@ -120,6 +129,9 @@ def test_cog_lifecycle_commands_and_registration(tmp_path, monkeypatch) -> None:
         await cog.availability_poll_skip_next.callback(cog, interaction)
         await cog.availability_poll_stop.callback(cog, interaction)
         await cog.availability_poll_resume.callback(cog, interaction)
+        await cog.availability_poll_post.callback(cog, interaction)
+        await cog.availability_poll_status.callback(cog, interaction)
+        await cog.availability_poll_close.callback(cog, interaction)
         await cog.cog_unload()
         assert len(bot.views) == 1
         assert cog.service.calls == [
@@ -127,6 +139,9 @@ def test_cog_lifecycle_commands_and_registration(tmp_path, monkeypatch) -> None:
             ("skip", interaction),
             ("stop", interaction),
             ("resume", interaction),
+            ("post", interaction),
+            ("status", interaction),
+            ("close", interaction),
             ("shutdown",),
         ]
 
@@ -140,13 +155,50 @@ def test_slash_command_metadata_and_permissions(tmp_path, monkeypatch) -> None:
         cog.availability_poll_skip_next.name: cog.availability_poll_skip_next,
         cog.availability_poll_stop.name: cog.availability_poll_stop,
         cog.availability_poll_resume.name: cog.availability_poll_resume,
+        cog.availability_poll_post.name: cog.availability_poll_post,
+        cog.availability_poll_status.name: cog.availability_poll_status,
+        cog.availability_poll_close.name: cog.availability_poll_close,
     }
     assert set(commands) == {
         "availability_poll_skip_next",
         "availability_poll_stop",
         "availability_poll_resume",
+        "availability_poll_post",
+        "availability_poll_status",
+        "availability_poll_close",
     }
     assert all(command.default_permissions.administrator for command in commands.values())
+    assert all(command.checks for command in commands.values())
+    assert commands["availability_poll_post"].description == (
+        "「いまひま？」アンケートを今すぐ投稿します"
+    )
+    assert commands["availability_poll_status"].description == (
+        "「いまひま？」アンケートの現在状態を確認します"
+    )
+    assert commands["availability_poll_close"].description == (
+        "現在の「いまひま？」アンケートを締め切ります"
+    )
+
+
+def test_permission_error_is_ephemeral(tmp_path, monkeypatch) -> None:
+    class Response:
+        def __init__(self) -> None:
+            self.sent = []
+
+        async def send_message(self, message, *, ephemeral):
+            self.sent.append((message, ephemeral))
+
+    async def scenario():
+        cog, _bot = make_cog(tmp_path, monkeypatch)
+        response = Response()
+        interaction = SimpleNamespace(response=response)
+        await cog._command_error(
+            interaction,
+            discord.app_commands.MissingPermissions(["administrator"]),
+        )
+        assert response.sent == [("この操作は管理者だけが実行できます。", True)]
+
+    asyncio.run(scenario())
 
 
 def test_setup_is_callable() -> None:

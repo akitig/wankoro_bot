@@ -100,7 +100,10 @@ cogs/availability_poll
 VALORANT・その他ゲーム・作業VCを匿名集計し、回答は変更・取消できます。平日と
 休日の設定window内で時刻を一度だけ抽選し、保存した次回時刻まで単一taskで待機します。
 管理者は`/availability_poll_skip_next`、`/availability_poll_stop`、
-`/availability_poll_resume`を利用できます。
+`/availability_poll_resume`に加え、`/availability_poll_post`、
+`/availability_poll_status`、`/availability_poll_close`を利用できます。手動postは
+停止中でも利用でき、次回定期投稿時刻やskip状態を変更しません。statusは状態を変更せず、
+closeは現在のpollだけを締め切り、次回定期投稿は予定どおり維持します。
 
 公開表示には回答者情報を出しませんが、回答変更のためruntime stateにはDiscord User
 IDを保存し、回答操作と状態が変わった管理Command操作は管理専用Discordサーバーへ
