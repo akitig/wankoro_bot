@@ -191,9 +191,6 @@ class Config:
 
     admin_id: int | None
     manager_role_ids: frozenset[int]
-    welcome_role_a: int | None
-    welcome_role_b: int | None
-    welcome_role_c: int | None
     welcome_handler_role_id: int | None
     welcome_inactive_voice_channel_id: int | None
     welcome_handler_excluded_user_ids: frozenset[int]
@@ -272,9 +269,6 @@ def _load_config() -> Config:
         log_level=_string_with_default("LOG_LEVEL", "INFO", strip=True),
         admin_id=_optional_int("ADMIN_ID"),
         manager_role_ids=_id_set("MANAGER_ROLE_IDS"),
-        welcome_role_a=_optional_int("ROLE_A"),
-        welcome_role_b=_optional_int("ROLE_B"),
-        welcome_role_c=_optional_int("ROLE_C"),
         welcome_handler_role_id=_strict_optional_id("WELCOME_HANDLER_ROLE_ID"),
         welcome_inactive_voice_channel_id=_strict_optional_id(
             "WELCOME_INACTIVE_VOICE_CHANNEL_ID"
