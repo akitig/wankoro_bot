@@ -43,6 +43,11 @@ storage/json_store.py
 - **XmasRepository**: 元nicknameとpanel message IDのruntime state永続化。
 - **ValomapRepository**: VALORANTマップのBAN setと追加・解除・全解除の永続化。
 - **ValocheckRepository**: 診断完了recordと質問・introのraw JSON読込。
+- **BumpPanelRepository**: BUMP成功時刻、次回可能時刻、panel message IDの永続化。
+
+BUMPパネルは成功時に次回可能時刻を計算し、その時刻まで単一taskで1回だけ待機します。
+常時ポーリングやDISBOARDコマンドの自動実行、ユーザー代理Interactionは行いません。
+Command IDが未設定の場合は、ユーザーへ`/bump`の手動選択を案内します。
 
 景品CSV、確率、cutoff、スコア、Role判定、マップAPI取得などの業務ルールは、それぞれ
 Serviceの責務です。

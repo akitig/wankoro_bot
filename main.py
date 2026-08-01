@@ -30,6 +30,7 @@ COGS = [
     "cogs.2025_xmas_gacha",
     "cogs.2026_joya_gacha",
     "cogs.2026_omikuji_gacha",
+    "cogs.bump_panel",
 ]
 
 class MyBot(commands.Bot):

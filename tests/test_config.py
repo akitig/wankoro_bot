@@ -53,3 +53,33 @@ def test_config_is_typed_and_cached(monkeypatch) -> None:
     assert config.reaction_role_values["RR_GAME_VALO"] == "10:20"
     assert config.log_level == "INFO"
     assert "private-token" not in repr(config)
+
+
+def test_bump_panel_config_values(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("APPLICATION_ID", "101")
+    monkeypatch.setenv("GUILD_ID", "202")
+    monkeypatch.setenv("BUMP_CHANNEL_ID", "1432640140911575060")
+    monkeypatch.setenv("DISBOARD_BOT_ID", "302050872383242240")
+    monkeypatch.setenv("DISBOARD_BUMP_COMMAND_ID", "947088344167366698")
+    monkeypatch.setenv("BUMP_COOLDOWN_SECONDS", "3600")
+    monkeypatch.setenv("RUNTIME_DATA_DIR", str(tmp_path))
+
+    config = get_config()
+
+    assert config.bump_channel_id == 1432640140911575060
+    assert config.disboard_bot_id == 302050872383242240
+    assert config.disboard_bump_command_id == 947088344167366698
+    assert config.bump_cooldown_seconds == 3600
+    assert config.bump_panel_state_path == tmp_path / "bump_panel_state.json"
+
+
+def test_bump_panel_optional_command_and_cooldown_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("APPLICATION_ID", "101")
+    monkeypatch.setenv("GUILD_ID", "202")
+    monkeypatch.delenv("DISBOARD_BUMP_COMMAND_ID", raising=False)
+    monkeypatch.setenv("BUMP_COOLDOWN_SECONDS", "0")
+
+    config = get_config()
+
+    assert config.disboard_bump_command_id is None
+    assert config.bump_cooldown_seconds == 7200
