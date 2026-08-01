@@ -32,6 +32,7 @@ current production layout.
 | `data/xmas_gacha_state.json` | Runtime state | Yes | Potentially: IDs/nicknames | Tracked | `/var/lib/wankorobot/events/2025-xmas/state.json` initially |
 | `valomap_bans.json` | Runtime state | Yes | No known personal data | Ignored | `/var/lib/wankorobot/valomap/bans.json` |
 | `bump_panel_state.json` | Runtime state | Yes | No user data; timestamps and panel ID only | Ignored | `/var/lib/wankoro-bot/bump_panel_state.json` |
+| `availability_poll_state.json` | Runtime state | Yes | Yes: User IDs and current answers | Ignored | `/var/lib/wankoro-bot/availability_poll_state.json` |
 | `bot.log`, `bot.err` | Log | Yes | May include IDs/names/errors | Ignored | journald or `/var/log/wankorobot/` with rotation |
 | `cogs/__pycache__/` | Generated cache | Yes | No | Ignored | Not deployed/copied |
 | `OLD/` | Historical source | No | Unknown until separately audited | Tracked | `archive/legacy/` or Git history |

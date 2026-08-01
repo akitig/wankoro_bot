@@ -33,6 +33,8 @@ logs/
 valomap_bans.json
 bump_panel_state.json
 data/bump_panel_state.json
+availability_poll_state.json
+data/availability_poll_state.json
 data/2026_joya_state.json
 data/2026_omikujii_points.json
 data/valo_check_completed.json

@@ -62,6 +62,7 @@ Repository APIs; a DI container is not needed for the current application.
 | New Year bell event | `JOYA_DATA_PATH`, `JOYA_MIN_SEC`, `JOYA_MAX_SEC`, `JOYA_WINNER_ROLE_ID`, `JOYA_CHANNEL_ID` |
 | Omikuji event | `OMIKUJI_POINTS_PATH`, `OMIKUJI_REST_VC_ID`, `OMIKUJI_RESETTER_USER_ID`, `OMIKUJI_PANEL_CHANNEL_ID` |
 | DISBOARD BUMP panel | `BUMP_CHANNEL_ID`, `DISBOARD_BOT_ID`, `DISBOARD_BUMP_COMMAND_ID`, `BUMP_COOLDOWN_SECONDS`, `BUMP_PANEL_STATE_PATH` |
+| Availability poll | `AVAILABILITY_POLL_CHANNEL_ID`, `AVAILABILITY_POLL_TIMEZONE`, `AVAILABILITY_POLL_WEEKDAY_WINDOWS`, `AVAILABILITY_POLL_HOLIDAY_WINDOWS`, `AVAILABILITY_POLL_STATE_PATH`, `AVAILABILITY_POLL_AUDIT_GUILD_ID`, `AVAILABILITY_POLL_AUDIT_CHANNEL_ID` |
 
 Mutable runtime paths use an explicitly configured feature path first. Otherwise,
 their root is resolved in this order: `RUNTIME_DATA_DIR`, `STATE_DIRECTORY`,
@@ -91,6 +92,13 @@ All JSON and CSV paths exposed through Config use `pathlib.Path`.
 | `joya_data_path` | `2026_joya_state.json` |
 | `omikuji_points_path` | `2026_omikujii_points.json` |
 | `bump_panel_state_path` | `bump_panel_state.json` |
+| `availability_poll_state_path` | `availability_poll_state.json` |
+
+Availability windows use comma-separated same-day `HH:MM-HH:MM` values. Config
+strips whitespace, removes exact duplicates, sorts by start time, and rejects
+empty, malformed, reversed, or overlapping windows. The default timezone is
+`Asia/Tokyo`. Japanese public holidays are evaluated locally with `jpholiday`
+1.0.2 (MIT); no external holiday API is called.
 
 Resolving Config paths only constructs `Path` values. It does not create the
 runtime directory or any JSON file.

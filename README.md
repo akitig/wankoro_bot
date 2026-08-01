@@ -74,7 +74,7 @@ BAN設定は `valomap_bans.json` に永続保存され、Bot再起動後も保�
 > ファイル：`main.py`
 
 Bot全体のエントリーポイント。  
-`.env` の設定を読み込み、以下の11個のCogを起動します。
+`.env` の設定を読み込み、以下の12個のCogを起動します。
 
 ```bash
 cogs/welcome
@@ -88,12 +88,25 @@ cogs/2025_xmas_gacha
 cogs/2026_joya_gacha
 cogs/2026_omikuji_gacha
 cogs/bump_panel
+cogs/availability_poll
 ```
 
 `bump_panel`はDISBOARDのBUMP成功を検知し、2時間後まで1回だけ待機する
 常設案内パネルです。Bot自身は`/bump`を実行せず、ボタンはユーザーへCommand
 メンションをephemeral表示します。Command ID未設定時は手動で`/bump`を選ぶよう
 案内します。
+
+`availability_poll`はIssue #51の一般利用者向け匿名「いまひま？」アンケートです。
+VALORANT・その他ゲーム・作業VCを匿名集計し、回答は変更・取消できます。平日と
+休日の設定window内で時刻を一度だけ抽選し、保存した次回時刻まで単一taskで待機します。
+管理者は`/availability_poll_skip_next`、`/availability_poll_stop`、
+`/availability_poll_resume`を利用できます。
+
+公開表示には回答者情報を出しませんが、回答変更のためruntime stateにはDiscord User
+IDを保存し、回答操作と状態が変わった管理Command操作は管理専用Discordサーバーへ
+送信します。管理ログにはUser ID、mention、表示名、回答前後が含まれるため、閲覧権限を
+厳格に制限してください。監査送信失敗で回答はロールバックせず、永続的な再送保証も
+行いません。
 
 起動時には全スラッシュコマンドを自動同期し、  
 権限エラーやロード失敗もコンソールに出力されます。
@@ -188,7 +201,7 @@ EnvironmentFile=/home/akitig/Desktop/Bot/Toureikai/Wankorobot/.env
 | ライブラリ | discord.py v2.x / aiohttp / python-dotenv |
 | データ保存 | Repository経由のruntime JSON・.env |
 | 実行方式 | systemd 常駐 or CLI実行 |
-| 構造 | 11 Cog / Service層 / Repository層 / storage層 |
+| 構造 | 12 Cog / Service層 / Repository層 / storage層 |
 
 ---
 
@@ -197,7 +210,7 @@ EnvironmentFile=/home/akitig/Desktop/Bot/Toureikai/Wankorobot/.env
 ```text
 cogs/          Discord Command・Interaction・View境界
 services/      業務ロジックとDiscord API操作
-repositories/  機能ごとの永続状態と保存API（6 Repository）
+repositories/  機能ごとの永続状態と保存API（7 Repository）
 storage/       共通のJSON読込・atomic保存
 tests/         characterization・境界・Repository・構造テスト
 ```

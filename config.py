@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
@@ -106,6 +107,51 @@ def _reaction_role_values() -> Mapping[str, str]:
     return MappingProxyType(values)
 
 
+def parse_time_windows(value: str) -> tuple[str, ...]:
+    """Validate, de-duplicate, and order same-day ``HH:MM-HH:MM`` windows."""
+
+    parts = value.split(",")
+    if not parts or any(not part.strip() for part in parts):
+        raise ValueError("availability poll windows must not contain empty entries")
+    parsed: set[tuple[int, int]] = set()
+    for part in parts:
+        bounds = part.strip().split("-")
+        if len(bounds) != 2:
+            raise ValueError("availability poll windows must use HH:MM-HH:MM")
+        minutes: list[int] = []
+        for bound in bounds:
+            pieces = bound.strip().split(":")
+            if len(pieces) != 2 or any(len(piece) != 2 for piece in pieces):
+                raise ValueError("availability poll times must use HH:MM")
+            if not all(piece.isdigit() for piece in pieces):
+                raise ValueError("availability poll times must be numeric")
+            hour, minute = map(int, pieces)
+            if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+                raise ValueError("availability poll time is out of range")
+            minutes.append(hour * 60 + minute)
+        start, end = minutes
+        if end <= start:
+            raise ValueError("availability poll window end must follow start")
+        parsed.add((start, end))
+    ordered = sorted(parsed)
+    for previous, current in zip(ordered, ordered[1:], strict=False):
+        if current[0] < previous[1]:
+            raise ValueError("availability poll windows must not overlap")
+    return tuple(
+        f"{start // 60:02d}:{start % 60:02d}-{end // 60:02d}:{end % 60:02d}"
+        for start, end in ordered
+    )
+
+
+def _timezone_name(name: str, default: str) -> str:
+    value = _string_with_default(name, default, strip=True)
+    try:
+        ZoneInfo(value)
+    except ZoneInfoNotFoundError as error:
+        raise ValueError("invalid availability poll timezone") from error
+    return value
+
+
 @dataclass(frozen=True)
 class Config:
     discord_token: str | None = field(repr=False)
@@ -164,6 +210,14 @@ class Config:
     disboard_bump_command_id: int | None
     bump_cooldown_seconds: int
     bump_panel_state_path: Path
+
+    availability_poll_channel_id: int | None
+    availability_poll_timezone: str
+    availability_poll_weekday_windows: tuple[str, ...]
+    availability_poll_holiday_windows: tuple[str, ...]
+    availability_poll_state_path: Path
+    availability_poll_audit_guild_id: int | None
+    availability_poll_audit_channel_id: int | None
 
     def require_id(self, value: int | None, environment_name: str) -> int:
         """Return a required Cog setting or fail when that Cog is constructed."""
@@ -297,6 +351,37 @@ def _load_config() -> Config:
             runtime_dir=runtime_data_dir,
             filename="bump_panel_state.json",
             strip=True,
+        ),
+        availability_poll_channel_id=_optional_int("AVAILABILITY_POLL_CHANNEL_ID"),
+        availability_poll_timezone=_timezone_name(
+            "AVAILABILITY_POLL_TIMEZONE",
+            "Asia/Tokyo",
+        ),
+        availability_poll_weekday_windows=parse_time_windows(
+            _string_with_default(
+                "AVAILABILITY_POLL_WEEKDAY_WINDOWS",
+                "20:00-21:00",
+                strip=True,
+            )
+        ),
+        availability_poll_holiday_windows=parse_time_windows(
+            _string_with_default(
+                "AVAILABILITY_POLL_HOLIDAY_WINDOWS",
+                "13:00-14:00,20:00-21:00",
+                strip=True,
+            )
+        ),
+        availability_poll_state_path=resolve_runtime_path(
+            explicit_value=os.getenv("AVAILABILITY_POLL_STATE_PATH"),
+            runtime_dir=runtime_data_dir,
+            filename="availability_poll_state.json",
+            strip=True,
+        ),
+        availability_poll_audit_guild_id=_optional_int(
+            "AVAILABILITY_POLL_AUDIT_GUILD_ID"
+        ),
+        availability_poll_audit_channel_id=_optional_int(
+            "AVAILABILITY_POLL_AUDIT_CHANNEL_ID"
         ),
     )
 

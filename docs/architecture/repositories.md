@@ -44,10 +44,18 @@ storage/json_store.py
 - **ValomapRepository**: VALORANTマップのBAN setと追加・解除・全解除の永続化。
 - **ValocheckRepository**: 診断完了recordと質問・introのraw JSON読込。
 - **BumpPanelRepository**: BUMP成功時刻、次回可能時刻、panel message IDの永続化。
+- **AvailabilityPollRepository**: active poll、匿名集計用回答、抽選済み次回時刻、
+  pause/skip制御の永続化。
 
 BUMPパネルは成功時に次回可能時刻を計算し、その時刻まで単一taskで1回だけ待機します。
 常時ポーリングやDISBOARDコマンドの自動実行、ユーザー代理Interactionは行いません。
 Command IDが未設定の場合は、ユーザーへ`/bump`の手動選択を案内します。
+
+Availability pollの公開Embedは人数と足跡だけを表示します。回答変更のためRepositoryには
+User IDを文字列keyとして保存します。回答者情報は管理専用Discord監査ログにのみ表示し、
+通常ログや公開pollには出しません。平日は夜、土日・日本の祝日は昼と夜のwindowを使い、
+各次回時刻を一度だけ抽選・保存して単一scheduler taskで待機します。常時ポーリングは
+行いません。pause、skip、抽選済みnext runは再起動後も復元されます。
 
 景品CSV、確率、cutoff、スコア、Role判定、マップAPI取得などの業務ルールは、それぞれ
 Serviceの責務です。
