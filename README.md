@@ -140,7 +140,9 @@ python3 -m venv .venv
 `EnvironmentFile`で読み込めるよう、環境変数名にはASCII英大文字・数字・
 アンダースコアのみを使用します。全設定、型、デフォルト値、runtime pathは
 [`docs/architecture/configuration.md`](docs/architecture/configuration.md)を
-参照してください。
+参照してください。テンプレートは機能単位で並び、ManagementはCommand権限と
+緊急fallback、Welcomeは担当者選出を設定します。旧`ROLE_A/B/C`は廃止済みです。
+Reaction Roleの`RR_V_*`は維持し、任意のruntime path overrideは末尾へまとめています。
 
 ```env
 DISCORD_TOKEN=xxxxxxxxxxxxxxxx
@@ -150,11 +152,6 @@ GUILD_ID=xxxxxxxxxxxxxxxx
 # 管理権限
 ADMIN_ID=xxxxxxxxxxxxxxxx
 MANAGER_ROLE_IDS=1111111111,2222222222
-
-# 既存ロール設定
-ROLE_A=1111111111
-ROLE_B=2222222222
-ROLE_C=3333333333
 
 # ウェルカム案内担当の専用ロール・休止VC・除外User
 WELCOME_HANDLER_ROLE_ID=4444444444

@@ -102,6 +102,7 @@ Configは、既存の個別path設定を壊さず、次の優先順位でruntime
 2. systemdが `StateDirectory=` から提供する `STATE_DIRECTORY`
 3. `XDG_DATA_HOME/wankoro-bot`
 4. `~/.local/share/wankoro-bot`
+5. homeを解決できない場合は、後方互換としてWorkingDirectory相対の `data/`
 
 個別設定 `VALO_CHECK_DATA_PATH`、`OMIKUJI_POINTS_PATH`、`JOYA_DATA_PATH`、
 `XMAS_GACHA_STATE` が設定されている場合は、後方互換のためroot派生値より優先します。

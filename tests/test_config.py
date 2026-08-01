@@ -68,6 +68,20 @@ def test_welcome_handler_optional_config_defaults(monkeypatch) -> None:
     assert config.welcome_handler_excluded_user_ids == frozenset()
 
 
+def test_retired_welcome_role_config_is_absent(monkeypatch) -> None:
+    monkeypatch.setenv("APPLICATION_ID", "101")
+    monkeypatch.setenv("GUILD_ID", "202")
+    monkeypatch.setenv("ROLE_A", "1")
+    monkeypatch.setenv("ROLE_B", "2")
+    monkeypatch.setenv("ROLE_C", "3")
+
+    config = get_config()
+
+    assert not hasattr(config, "welcome_role_a")
+    assert not hasattr(config, "welcome_role_b")
+    assert not hasattr(config, "welcome_role_c")
+
+
 @pytest.mark.parametrize(
     ("name", "value"),
     [

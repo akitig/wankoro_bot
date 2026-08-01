@@ -12,7 +12,8 @@ Guild ID, and the Discord token. Each Cog then calls `get_config()` at its
 composition boundary and passes only the values required by its Service.
 Service and Repository modules do not import `Config` or call `get_config()`.
 
-Existing environment names and defaults remain unchanged. Application and
+Environment variables are grouped by feature in `.env.example`, which is the
+template for deployment configuration. Application and
 Guild IDs are required when Config is first loaded. Settings required by only
 one Cog remain optional in Config and are validated when that Cog is
 constructed, so a missing Cog-specific setting does not prevent unrelated Cogs
@@ -53,7 +54,9 @@ Repository APIs; a DI container is not needed for the current application.
 | Area | Environment variables |
 |---|---|
 | Discord process | `DISCORD_TOKEN`, `APPLICATION_ID`, `GUILD_ID`, `LOG_LEVEL` |
-| Welcome and moderation | `ADMIN_ID`, `MANAGER_ROLE_IDS`, `ROLE_A`, `ROLE_B`, `ROLE_C`, `WELCOME_HANDLER_ROLE_ID`, `WELCOME_INACTIVE_VOICE_CHANNEL_ID`, `WELCOME_HANDLER_EXCLUDED_USER_IDS`, `LEAVE_LOG_CHANNEL_ID`, `DM_FORWARD_USER_ID` |
+| Management | `ADMIN_ID`, `MANAGER_ROLE_IDS` |
+| Welcome | `WELCOME_HANDLER_ROLE_ID`, `WELCOME_INACTIVE_VOICE_CHANNEL_ID`, `WELCOME_HANDLER_EXCLUDED_USER_IDS` |
+| Leave log and DM forwarding | `LEAVE_LOG_CHANNEL_ID`, `DM_FORWARD_USER_ID` |
 | Reaction Roles | `REACTION_ROLE_MESSAGE_IDS`, every `RR_*` mapping |
 | Runtime storage | `RUNTIME_DATA_DIR`, systemd-provided `STATE_DIRECTORY`, `XDG_DATA_HOME` |
 | VALORANT check | `ROLE_ENJOY_ID`, `ROLE_GACHI_ID`, `VALO_ROLE_LOG_CHANNEL_ID`, `VALO_CHECK_VIEW_TIMEOUT_SEC`, `VALO_CHECK_DATA_PATH`, `VALOMAP_BANS_PATH`, `VALO_CHECK_QUESTIONS_PATH`, `VALO_CHECK_INTRO_PATH`, `VALO_CHECK_THRESH_ENJOY_ONLY`, `VALO_CHECK_THRESH_GACHI_ONLY`, `VALO_CHECK_LABEL_ENJOY`, `VALO_CHECK_LABEL_GACHI`, `VALO_CHECK_LABEL_BOTH` |
@@ -71,6 +74,13 @@ working-directory-relative `data/` directory when no home is available. Empty
 root values are ignored and surrounding whitespace is removed.
 `STATE_DIRECTORY` is the absolute path supplied by systemd and is used directly;
 Config does not rebuild it below `/var/lib`.
+
+`ROLE_A`, `ROLE_B`, and `ROLE_C` are retired. Welcome assignment uses only the
+dedicated Welcome settings above. `RR_V_*` remains part of the Reaction Role
+configuration even though its names are discovered dynamically. Runtime path
+overrides are optional and are grouped at the end of `.env.example`; static
+master-data paths such as the VALORANT intro/questions and Xmas CSV remain with
+their owning features.
 
 Existing feature-specific path whitespace behavior is preserved. Omikuji and
 Xmas paths are stripped; Joya and VALORANT check paths remain literal. An empty
