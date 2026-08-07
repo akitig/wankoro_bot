@@ -23,6 +23,7 @@ current production layout.
 |---|---|---:|---:|---|---|
 | `.env` | Secret + deployment configuration | No | Yes | Ignored | External secret store or `/etc/wankorobot/wankorobot.env` |
 | `.env.example` | Configuration example | No | No values | Tracked | `config/examples/wankorobot.env.example` |
+| `data/valorant_playstyle_questions.json` | Master configuration | No | No user state | Tracked | Keep with the Discord-independent diagnosis core |
 | `data/2025_xmas_gacha.csv` | Master configuration | No | No known user state | Tracked | `config/events/2025-xmas/rewards.csv` |
 | `data/2026_omikujii_points.json` | Runtime state | Yes, every minute | Yes: IDs and points | Tracked and modified | `/var/lib/wankorobot/events/2026-omikuji/points.json` initially |
 | `data/2026_joya_state.json` | Runtime state | Yes | Yes: IDs/state | Tracked | `/var/lib/wankorobot/events/2026-joya/state.json` initially |
