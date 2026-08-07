@@ -43,7 +43,8 @@ storage/json_store.py
 - **XmasRepository**: 元nicknameとpanel message IDのruntime state永続化。
 - **ValomapRepository**: VALORANTマップのBAN setと追加・解除・全解除の永続化。
 - **ValorantPlaystyleRepository**: version付き質問master JSONのschema、ID、axis、scoreを
-  検証し、Discord非依存の質問モデルとして読み込む。診断コア実装中でDiscord UI未接続。
+  検証し、Discord非依存の質問モデルとして読み込む。Serviceは主要4軸を重み付けし、
+  上位分類の軸別最低条件を適用して5段階に分類する。Discord UIには未接続。
 - **BumpPanelRepository**: BUMP成功時刻、次回可能時刻、panel message IDの永続化。
 - **AvailabilityPollRepository**: active poll、匿名集計用回答、抽選済み次回時刻、
   pause/skip制御の永続化。

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import Enum
+from math import isclose
 from pathlib import Path
 from types import MappingProxyType
 
@@ -44,6 +46,66 @@ class PlaystyleScore:
     missing_question_ids: tuple[str, ...]
 
 
+class PlaystyleCategory(str, Enum):
+    ENJOY = "enjoy"
+    ENJOY_LEANING = "enjoy_leaning"
+    BALANCED = "balanced"
+    GACHI_LEANING = "gachi_leaning"
+    GACHI = "gachi"
+
+
+@dataclass(frozen=True)
+class ClassificationPolicy:
+    weights: Mapping[str, float]
+    gachi_weighted_minimum: float
+    gachi_axis_minimums: Mapping[str, float]
+    gachi_leaning_weighted_minimum: float
+    gachi_leaning_axis_minimums: Mapping[str, float]
+    balanced_minimum: float
+    enjoy_leaning_minimum: float
+
+    def __post_init__(self) -> None:
+        primary_axes = {"win", "team", "improvement", "focus"}
+        if set(self.weights) != primary_axes:
+            raise ValueError("classification weights must contain the four primary axes")
+        if not isclose(sum(self.weights.values()), 1.0):
+            raise ValueError("classification weights must sum to 1.0")
+        if set(self.gachi_axis_minimums) != primary_axes:
+            raise ValueError("GACHI minimums must contain the four primary axes")
+        if set(self.gachi_leaning_axis_minimums) != {
+            "team",
+            "improvement",
+            "focus",
+        }:
+            raise ValueError(
+                "GACHI_LEANING minimums must contain team, improvement, and focus"
+            )
+
+
+DEFAULT_CLASSIFICATION_POLICY = ClassificationPolicy(
+    weights=MappingProxyType(
+        {"win": 0.20, "team": 0.35, "improvement": 0.25, "focus": 0.20}
+    ),
+    gachi_weighted_minimum=0.80,
+    gachi_axis_minimums=MappingProxyType(
+        {"team": 0.80, "improvement": 2 / 3, "focus": 2 / 3, "win": 5 / 9}
+    ),
+    gachi_leaning_weighted_minimum=0.65,
+    gachi_leaning_axis_minimums=MappingProxyType(
+        {"team": 0.60, "improvement": 5 / 9, "focus": 5 / 9}
+    ),
+    balanced_minimum=0.45,
+    enjoy_leaning_minimum=0.25,
+)
+
+
+@dataclass(frozen=True)
+class PlaystyleClassification:
+    category: PlaystyleCategory
+    weighted_score: float
+    score: PlaystyleScore
+
+
 def _calculate_max_scores(question_set: QuestionSet) -> dict[str, int]:
     maximums = dict.fromkeys(SUPPORTED_AXES, 0)
     for question in question_set.questions:
@@ -63,6 +125,7 @@ class ValorantPlaystyleService:
         question_set: QuestionSet | None = None,
         *,
         questions_path: Path | None = None,
+        classification_policy: ClassificationPolicy = DEFAULT_CLASSIFICATION_POLICY,
     ) -> None:
         if (question_set is None) == (questions_path is None):
             raise ValueError("provide exactly one of question_set or questions_path")
@@ -72,6 +135,7 @@ class ValorantPlaystyleService:
         self.question_set = question_set
         self._questions = {question.id: question for question in question_set.questions}
         self._max_scores = _calculate_max_scores(question_set)
+        self.classification_policy = classification_policy
 
     @property
     def max_scores(self) -> Mapping[str, int]:
@@ -125,6 +189,50 @@ class ValorantPlaystyleService:
         if result.missing_question_ids:
             raise IncompleteAnswersError(result.missing_question_ids)
         return result
+
+    def classify_complete(
+        self, answers: Mapping[str, str]
+    ) -> PlaystyleClassification:
+        """Score and classify a complete set of answers."""
+
+        return self.classify(self.score_complete(answers))
+
+    def classify(self, score: PlaystyleScore) -> PlaystyleClassification:
+        """Classify an already scored result only when no answers are missing."""
+
+        if score.missing_question_ids:
+            raise IncompleteAnswersError(score.missing_question_ids)
+        policy = self.classification_policy
+        weighted_score = sum(
+            score.axes[axis].normalized * weight
+            for axis, weight in policy.weights.items()
+        )
+
+        if weighted_score >= policy.gachi_weighted_minimum and self._meets_minimums(
+            score, policy.gachi_axis_minimums
+        ):
+            category = PlaystyleCategory.GACHI
+        elif (
+            weighted_score >= policy.gachi_leaning_weighted_minimum
+            and self._meets_minimums(score, policy.gachi_leaning_axis_minimums)
+        ):
+            category = PlaystyleCategory.GACHI_LEANING
+        elif weighted_score >= policy.balanced_minimum:
+            category = PlaystyleCategory.BALANCED
+        elif weighted_score >= policy.enjoy_leaning_minimum:
+            category = PlaystyleCategory.ENJOY_LEANING
+        else:
+            category = PlaystyleCategory.ENJOY
+        return PlaystyleClassification(category, weighted_score, score)
+
+    @staticmethod
+    def _meets_minimums(
+        score: PlaystyleScore, minimums: Mapping[str, float]
+    ) -> bool:
+        return all(
+            score.axes[axis].normalized >= minimum
+            for axis, minimum in minimums.items()
+        )
 
     def _validate_answer_references(
         self, answers: Mapping[str, str]
