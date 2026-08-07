@@ -64,3 +64,39 @@ def test_startup_rejects_missing_discord_token_before_connecting(
         asyncio.run(main.main())
 
     assert called is False
+
+
+def test_command_sync_targets_diagnosis_and_playstyle_log_guilds(monkeypatch) -> None:
+    class Tree:
+        def __init__(self) -> None:
+            self.copied_to: list[int] = []
+            self.synced: list[int] = []
+
+        def copy_global_to(self, *, guild) -> None:
+            self.copied_to.append(guild.id)
+
+        async def sync(self, *, guild) -> None:
+            self.synced.append(guild.id)
+
+        def get_commands(self, *, guild) -> list[object]:
+            return []
+
+    class Bot:
+        def __init__(self) -> None:
+            self.tree = Tree()
+
+        async def load_extension(self, _name: str) -> None:
+            return None
+
+    config = SimpleNamespace(
+        guild_id=10,
+        valo_playstyle_log_guild_id=20,
+        require_id=lambda value, _name: value,
+    )
+    monkeypatch.setattr(main, "config", config)
+    bot = Bot()
+
+    asyncio.run(main.MyBot.setup_hook(bot))
+
+    assert bot.tree.copied_to == [10]
+    assert bot.tree.synced == [10, 20]

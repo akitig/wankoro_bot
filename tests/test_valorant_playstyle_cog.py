@@ -1,13 +1,18 @@
 import asyncio
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
+
+import discord
+from discord.ext import commands
 
 import cogs.valorant_playstyle as playstyle_cog
 import main
 from services.valorant_playstyle_service import PlaystyleCategory
 from tests.helpers.discord_fakes import (
     FakeChannel,
+    FakeGuild,
     FakeInteraction,
     FakeMember,
     FakeSentMessage,
@@ -18,16 +23,30 @@ class BotFake:
     def __init__(self, channel: FakeChannel | None = None) -> None:
         self.channel = channel
         self.cogs: list[object] = []
+        self.source_guild = FakeGuild(guild_id=10)
+        self.log_guild = FakeGuild(
+            guild_id=20,
+            channels=({30: channel} if channel is not None else {}),
+        )
+        self.users: dict[int, object] = {}
 
-    def get_channel(self, channel_id: int):
-        return self.channel if channel_id == 30 else None
+    def get_guild(self, guild_id: int):
+        if guild_id == self.source_guild.id:
+            return self.source_guild
+        if guild_id == self.log_guild.id:
+            return self.log_guild
+        return None
 
-    async def fetch_channel(self, channel_id: int):
-        if self.channel is None or channel_id != 30:
-            raise LookupError(channel_id)
-        return self.channel
+    def get_user(self, user_id: int):
+        return self.users.get(user_id)
 
-    async def add_cog(self, cog: object) -> None:
+    async def fetch_user(self, user_id: int):
+        if user_id not in self.users:
+            raise LookupError(user_id)
+        return self.users[user_id]
+
+    async def add_cog(self, cog: object, **kwargs) -> None:
+        cog.add_kwargs = kwargs
         self.cogs.append(cog)
 
 
@@ -40,6 +59,8 @@ def _config(tmp_path: Path, *, timeout: int = 1800) -> SimpleNamespace:
         valo_playstyle_gachi_focus_min=5 / 9,
         valo_playstyle_results_path=tmp_path / "results.json",
         valo_playstyle_timeout_seconds=timeout,
+        guild_id=10,
+        valo_playstyle_log_guild_id=20,
         valo_playstyle_log_channel_id=30,
         valo_playstyle_resend_user_id=40,
         require_id=lambda value, _name: value,
@@ -74,8 +95,9 @@ def test_cog_uses_configured_policy_and_registers_command(tmp_path, monkeypatch)
     assert cog.core.classification_policy.neutral_minimum == 0.35
     assert cog.valo_role.name == "valo_role"
     assert cog.valo_role.default_permissions.administrator is True
-    assert cog.valo_role_log.name == "valo_role_log"
-    assert cog.valo_role_log.default_permissions.administrator is True
+    log_cog = playstyle_cog.ValorantPlaystyleLogCog(cog)
+    assert log_cog.valo_role_log.name == "valo_role_log"
+    assert log_cog.valo_role_log.default_permissions.administrator is True
     assert "cogs.valorant_playstyle" in main.COGS
 
 
@@ -113,6 +135,8 @@ def test_command_rejects_bot_and_duplicate_session(tmp_path, monkeypatch) -> Non
         assert audit.title == "🐶 VALORANT診断を送信しました"
         assert member.mention in audit.description
         assert "<@1>" in audit.description
+        assert "User ID：3" in audit.description
+        assert "送信者ID：1" in audit.description
         assert "診断開始待ち" in audit.description
         await cog.cog_unload()
 
@@ -137,6 +161,8 @@ def test_command_reports_dm_failure_without_leaving_session(tmp_path, monkeypatc
         assert "送信に失敗" in audit.title
         assert member.mention in audit.description
         assert "<@1>" in audit.description
+        assert "User ID：3" in audit.description
+        assert "送信者ID：1" in audit.description
 
     asyncio.run(scenario())
 
@@ -242,6 +268,8 @@ def test_q15_completion_persists_and_replaces_user_result(tmp_path, monkeypatch)
         assert completion.title == "🐶 VALORANT診断が完了しました"
         assert member.mention in completion.description
         assert "<@1>" in completion.description
+        assert "User ID：3" in completion.description
+        assert "送信者ID：1" in completion.description
         assert "総合スコア：100%" in completion.description
         assert dm_result in completion.description.replace("総合スコア：100%\n\n", "")
 
@@ -277,13 +305,102 @@ def test_audit_send_failure_does_not_break_diagnosis_start(
     asyncio.run(scenario())
 
 
+def test_completion_audit_failure_does_not_lose_saved_result(
+    tmp_path, monkeypatch
+) -> None:
+    async def scenario() -> None:
+        monkeypatch.setattr(playstyle_cog, "get_config", lambda: _config(tmp_path))
+        channel = FakeChannel(send_error=RuntimeError("audit unavailable"))
+        cog = playstyle_cog.ValorantPlaystyleCog(BotFake(channel))
+        await cog.cog_load()
+        member = FakeMember(3)
+        session = playstyle_cog.DiagnosisSession(member, 1, "admin")
+        session.dm_message = FakeSentMessage()
+        session.answers = _maximum_answers(cog)
+        cog.sessions[member.id] = session
+
+        await cog._complete(session)
+
+        assert cog.results.repository.get_result(member.id) is not None
+        assert member.id not in cog.sessions
+        assert "診断結果" in session.dm_message.edits[-1]["embed"].title
+
+    asyncio.run(scenario())
+
+
+def test_audit_uses_configured_guild_and_rejects_channel_guild_mismatch(
+    tmp_path, monkeypatch
+) -> None:
+    async def scenario() -> None:
+        cog, channel = _make_cog(tmp_path, monkeypatch)
+        channel.guild = cog.bot.source_guild
+
+        sent = await cog._send_audit(discord.Embed(title="test"), context="test")
+
+        assert sent is False
+        assert channel.sent == []
+
+    asyncio.run(scenario())
+
+
+def test_audit_does_not_use_same_channel_id_from_diagnosis_guild(
+    tmp_path, monkeypatch
+) -> None:
+    async def scenario() -> None:
+        cog, management_channel = _make_cog(tmp_path, monkeypatch)
+        diagnosis_channel = FakeChannel()
+        diagnosis_channel.guild = cog.bot.source_guild
+        cog.bot.source_guild._channels[30] = diagnosis_channel
+
+        sent = await cog._send_audit(discord.Embed(title="test"), context="test")
+
+        assert sent is True
+        assert diagnosis_channel.sent == []
+        assert len(management_channel.sent) == 1
+
+    asyncio.run(scenario())
+
+
+def test_startup_validation_checks_both_guilds_and_log_permissions(
+    tmp_path, monkeypatch, caplog
+) -> None:
+    cog, _channel = _make_cog(tmp_path, monkeypatch)
+    caplog.set_level(logging.INFO)
+
+    cog._validate_cross_guild_setup()
+
+    assert "cross-guild setup validated" in caplog.text
+
+    cog.bot.log_guild._channels.clear()
+    cog._validate_cross_guild_setup()
+    assert "log channel is unavailable" in caplog.text
+
+
+def test_startup_validation_reports_missing_diagnosis_and_log_guilds(
+    tmp_path, monkeypatch, caplog
+) -> None:
+    cog, _channel = _make_cog(tmp_path, monkeypatch)
+    caplog.set_level(logging.ERROR)
+    cog.bot.get_guild = Mock(return_value=None)
+
+    cog._validate_cross_guild_setup()
+
+    assert "diagnosis guild is unavailable" in caplog.text
+    assert "log guild is unavailable" in caplog.text
+
+
 def test_answer_log_rejects_wrong_channel_before_lookup(tmp_path, monkeypatch) -> None:
     async def scenario() -> None:
         cog, _channel = _make_cog(tmp_path, monkeypatch)
         cog.results.repository.get_result = Mock(side_effect=AssertionError("lookup"))
-        interaction = FakeInteraction(FakeMember(1), channel_id=999)
+        interaction = FakeInteraction(
+            FakeMember(1), guild=cog.bot.log_guild, channel_id=999
+        )
+        log_cog = playstyle_cog.ValorantPlaystyleLogCog(cog)
 
-        await cog.valo_role_log.callback(cog, interaction, FakeMember(3))
+        await log_cog.valo_role_log.callback(
+            log_cog, interaction, user=FakeMember(3), user_id=None
+        )
 
         response = interaction.response.calls[-1]
         assert "ログチャンネルでのみ" in response[1][0]
@@ -292,18 +409,95 @@ def test_answer_log_rejects_wrong_channel_before_lookup(tmp_path, monkeypatch) -
     asyncio.run(scenario())
 
 
+def test_answer_log_rejects_wrong_guild_and_non_admin_before_lookup(
+    tmp_path, monkeypatch
+) -> None:
+    async def scenario() -> None:
+        cog, _channel = _make_cog(tmp_path, monkeypatch)
+        cog.results.repository.get_result = Mock(side_effect=AssertionError("lookup"))
+        log_cog = playstyle_cog.ValorantPlaystyleLogCog(cog)
+        wrong_guild = FakeInteraction(
+            FakeMember(1), guild=cog.bot.source_guild, channel_id=30
+        )
+        await log_cog.valo_role_log.callback(
+            log_cog, wrong_guild, user=None, user_id="3"
+        )
+        assert "管理サーバー" in wrong_guild.response.calls[-1][1][0]
+
+        non_admin = FakeInteraction(
+            FakeMember(1, administrator=False),
+            guild=cog.bot.log_guild,
+            channel_id=30,
+        )
+        await log_cog.valo_role_log.callback(
+            log_cog, non_admin, user=None, user_id="3"
+        )
+        assert "管理者のみ" in non_admin.response.calls[-1][1][0]
+        assert non_admin.response.calls[-1][2]["ephemeral"] is True
+
+    asyncio.run(scenario())
+
+
+def test_answer_log_validates_exclusive_user_parameters(tmp_path, monkeypatch) -> None:
+    async def scenario() -> None:
+        cog, _channel = _make_cog(tmp_path, monkeypatch)
+        cog.results.repository.get_result = Mock(side_effect=AssertionError("lookup"))
+        log_cog = playstyle_cog.ValorantPlaystyleLogCog(cog)
+
+        both = FakeInteraction(FakeMember(1), guild=cog.bot.log_guild, channel_id=30)
+        await log_cog.valo_role_log.callback(
+            log_cog, both, user=FakeMember(3), user_id="3"
+        )
+        assert "どちらか一方" in both.response.calls[-1][1][0]
+
+        neither = FakeInteraction(
+            FakeMember(1), guild=cog.bot.log_guild, channel_id=30
+        )
+        await log_cog.valo_role_log.callback(
+            log_cog, neither, user=None, user_id=None
+        )
+        assert "user または user_id" in neither.response.calls[-1][1][0]
+
+        for invalid in ("", "abc", " 3", "0", "-1", str(1 << 64), "１２３"):
+            interaction = FakeInteraction(
+                FakeMember(1), guild=cog.bot.log_guild, channel_id=30
+            )
+            await log_cog.valo_role_log.callback(
+                log_cog, interaction, user=None, user_id=invalid
+            )
+            assert "User IDが正しくありません" in interaction.response.calls[-1][1][0]
+
+    asyncio.run(scenario())
+
+
 def test_answer_log_reports_missing_result_ephemerally(tmp_path, monkeypatch) -> None:
     async def scenario() -> None:
         cog, _channel = _make_cog(tmp_path, monkeypatch)
         await cog.cog_load()
-        interaction = FakeInteraction(FakeMember(1), channel_id=30)
+        interaction = FakeInteraction(
+            FakeMember(1), guild=cog.bot.log_guild, channel_id=30
+        )
+        log_cog = playstyle_cog.ValorantPlaystyleLogCog(cog)
 
-        await cog.valo_role_log.callback(cog, interaction, FakeMember(3))
+        await log_cog.valo_role_log.callback(
+            log_cog, interaction, user=None, user_id="3"
+        )
 
         assert interaction.response.calls[-1] == ("defer", (), {"ephemeral": True})
         args, kwargs = interaction.followup.calls[-1]
         assert "診断結果はまだありません" in args[0]
         assert kwargs["ephemeral"] is True
+
+        member_interaction = FakeInteraction(
+            FakeMember(1), guild=cog.bot.log_guild, channel_id=30
+        )
+        await log_cog.valo_role_log.callback(
+            log_cog,
+            member_interaction,
+            user=FakeMember(4),
+            user_id=None,
+        )
+        assert "診断結果はまだありません" in member_interaction.followup.calls[-1][0][0]
 
     asyncio.run(scenario())
 
@@ -324,17 +518,28 @@ def test_answer_log_restores_saved_answers_as_ephemeral_pages(
             invoked_by=1,
             invoked_by_name="admin",
         )
-        interaction = FakeInteraction(FakeMember(9), channel_id=30)
+        interaction = FakeInteraction(
+            FakeMember(9), guild=cog.bot.log_guild, channel_id=30
+        )
+        source_member = FakeMember(3, name="source-member")
+        source_member.guild = cog.bot.source_guild
+        cog.bot.source_guild.members.append(source_member)
+        cog.bot.users[3] = FakeMember(3, name="cached-user")
+        log_cog = playstyle_cog.ValorantPlaystyleLogCog(cog)
 
-        await cog.valo_role_log.callback(cog, interaction, FakeMember(3))
+        await log_cog.valo_role_log.callback(
+            log_cog, interaction, user=None, user_id="3"
+        )
 
         assert len(interaction.followup.calls) == 4
         assert all(call[1]["ephemeral"] is True for call in interaction.followup.calls)
         summary = interaction.followup.calls[0][1]["embed"].description
-        assert "対象：<@3>" in summary
+        assert "対象：source-member (<@3>)" in summary
+        assert "対象User ID：3" in summary
         assert "診断日時：" in summary
         assert "最終評価日時：" in summary
-        assert "送信者：<@1>" in summary
+        assert "送信者：admin (<@1>)" in summary
+        assert "送信者ID：1" in summary
         assert "総合スコア：" in summary
         assert "勝利志向" in summary
         assert "フィードバック傾向" in summary
@@ -346,6 +551,21 @@ def test_answer_log_restores_saved_answers_as_ephemeral_pages(
             selected = next(choice for choice in question.choices if choice.id == "c")
             assert question.text in rendered
             assert selected.text in rendered
+
+        member_interaction = FakeInteraction(
+            FakeMember(9), guild=cog.bot.log_guild, channel_id=30
+        )
+        await log_cog.valo_role_log.callback(
+            log_cog,
+            member_interaction,
+            user=FakeMember(3, name="management-member"),
+            user_id=None,
+        )
+        assert len(member_interaction.followup.calls) == 4
+        assert all(
+            call[1]["ephemeral"] is True
+            for call in member_interaction.followup.calls
+        )
         assert channel.sent == []
 
     asyncio.run(scenario())
@@ -368,9 +588,14 @@ def test_answer_log_version_mismatch_does_not_restore_or_delete_result(
             invoked_by_name="admin",
         )
         before = cog.results.repository.get_result(3)
-        interaction = FakeInteraction(FakeMember(9), channel_id=30)
+        interaction = FakeInteraction(
+            FakeMember(9), guild=cog.bot.log_guild, channel_id=30
+        )
+        log_cog = playstyle_cog.ValorantPlaystyleLogCog(cog)
 
-        await cog.valo_role_log.callback(cog, interaction, FakeMember(3))
+        await log_cog.valo_role_log.callback(
+            log_cog, interaction, user=None, user_id="3"
+        )
 
         assert len(interaction.followup.calls) == 1
         embed = interaction.followup.calls[0][1]["embed"]
@@ -431,6 +656,8 @@ def test_timeout_notifies_and_preserves_previous_result(tmp_path, monkeypatch) -
         assert "1 / 15" in notification
         assert "<@1>" in notification
         assert "<@40>" in notification
+        assert "User ID：3" in notification
+        assert "送信者ID：1" in notification
 
     asyncio.run(scenario())
 
@@ -459,5 +686,29 @@ def test_setup_adds_cog(tmp_path, monkeypatch) -> None:
         bot = BotFake()
         await playstyle_cog.setup(bot)
         assert isinstance(bot.cogs[0], playstyle_cog.ValorantPlaystyleCog)
+        assert isinstance(bot.cogs[1], playstyle_cog.ValorantPlaystyleLogCog)
+        assert bot.cogs[1].add_kwargs["guild"].id == 20
+
+    asyncio.run(scenario())
+
+
+def test_commands_are_scoped_to_separate_guilds(tmp_path, monkeypatch) -> None:
+    async def scenario() -> None:
+        monkeypatch.setattr(playstyle_cog, "get_config", lambda: _config(tmp_path))
+        bot = commands.Bot(command_prefix="/", intents=discord.Intents.none())
+        await playstyle_cog.setup(bot)
+        source = discord.Object(id=10)
+        management = discord.Object(id=20)
+        bot.tree.copy_global_to(guild=source)
+
+        assert {command.name for command in bot.tree.get_commands(guild=source)} == {
+            "valo_role"
+        }
+        assert {
+            command.name for command in bot.tree.get_commands(guild=management)
+        } == {"valo_role_log"}
+        assert {command.name for command in bot.tree.get_commands()} == {"valo_role"}
+        assert bot.tree.get_commands(guild=discord.Object(id=30)) == []
+        await bot.close()
 
     asyncio.run(scenario())

@@ -51,6 +51,7 @@ REQUIRED_KEYS = {
     "VALO_PLAYSTYLE_GACHI_IMPROVEMENT_MIN",
     "VALO_PLAYSTYLE_GACHI_FOCUS_MIN",
     "VALO_PLAYSTYLE_TIMEOUT_SECONDS",
+    "VALO_PLAYSTYLE_LOG_GUILD_ID",
     "VALO_PLAYSTYLE_LOG_CHANNEL_ID",
     "VALO_PLAYSTYLE_RESEND_USER_ID",
     "VALO_RECRUIT_CHANNEL_ID",
@@ -107,6 +108,8 @@ def test_env_example_has_expected_unique_keys() -> None:
     assert len(keys) == len(set(keys))
     assert set(keys) == REQUIRED_KEYS
     assert not {"ROLE_A", "ROLE_B", "ROLE_C"} & set(keys)
+    values = dict(assignments)
+    assert values["VALO_PLAYSTYLE_LOG_GUILD_ID"] == ""
 
 
 def test_env_example_sections_are_in_required_order() -> None:

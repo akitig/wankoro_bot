@@ -37,6 +37,7 @@ from services.valorant_playstyle_service import (
 logger = logging.getLogger(__name__)
 QUESTION_PATH = Path("data/valorant_playstyle_questions.json")
 NUMBER_EMOJIS = ("1️⃣", "2️⃣", "3️⃣", "4️⃣")
+MAX_DISCORD_SNOWFLAKE = (1 << 64) - 1
 
 INTRO_TEXT = """この診断は、VALORANTの「上手い・下手」を決めるものではありません！
 
@@ -148,6 +149,11 @@ class ValorantPlaystyleCog(commands.Cog):
         repository = ValorantPlaystyleResultRepository(config.valo_playstyle_results_path)
         self.results = ValorantPlaystyleResultService(self.core, repository)
         self.timeout_seconds = config.valo_playstyle_timeout_seconds
+        self.diagnosis_guild_id = config.guild_id
+        self.log_guild_id = config.require_id(
+            config.valo_playstyle_log_guild_id,
+            "VALO_PLAYSTYLE_LOG_GUILD_ID",
+        )
         self.log_channel_id = config.require_id(
             config.valo_playstyle_log_channel_id,
             "VALO_PLAYSTYLE_LOG_CHANNEL_ID",
@@ -157,6 +163,7 @@ class ValorantPlaystyleCog(commands.Cog):
             "VALO_PLAYSTYLE_RESEND_USER_ID",
         )
         self.sessions: dict[int, DiagnosisSession] = {}
+        self._startup_validation_done = False
 
     async def cog_load(self) -> None:
         self.results.repository.load()
@@ -167,6 +174,13 @@ class ValorantPlaystyleCog(commands.Cog):
             if session.timeout_task is not None:
                 session.timeout_task.cancel()
         self.sessions.clear()
+
+    @commands.Cog.listener()
+    async def on_ready(self) -> None:
+        if self._startup_validation_done:
+            return
+        self._startup_validation_done = True
+        self._validate_cross_guild_setup()
 
     @app_commands.command(name="valo_role", description="指定メンバーへVALORANT診断を送信します")
     @app_commands.default_permissions(administrator=True)
@@ -206,7 +220,7 @@ class ValorantPlaystyleCog(commands.Cog):
                 "DMを送れませんでした。対象ユーザーのDM設定を確認してください。",
                 ephemeral=True,
             )
-            await self._send_dm_failure_audit(member, interaction.user.id)
+            await self._send_dm_failure_audit(member, interaction.user)
             return
         except Exception:
             self.sessions.pop(member.id, None)
@@ -216,7 +230,7 @@ class ValorantPlaystyleCog(commands.Cog):
                 interaction.user.id,
             )
             await interaction.followup.send("診断DMの送信に失敗しました。", ephemeral=True)
-            await self._send_dm_failure_audit(member, interaction.user.id)
+            await self._send_dm_failure_audit(member, interaction.user)
             return
         self._reset_timeout(session)
         await interaction.followup.send(f"{member.mention} に診断を送信しました。", ephemeral=True)
@@ -224,8 +238,8 @@ class ValorantPlaystyleCog(commands.Cog):
             discord.Embed(
                 title="🐶 VALORANT診断を送信しました",
                 description=(
-                    f"対象：{member.mention}\n"
-                    f"送信者：<@{interaction.user.id}>\n"
+                    f"{self._audit_identity('対象', member)}\n\n"
+                    f"{self._audit_identity('送信者', interaction.user)}\n\n"
                     "状態：診断開始待ち"
                 ),
                 color=0xF4A261,
@@ -233,23 +247,53 @@ class ValorantPlaystyleCog(commands.Cog):
             context="diagnosis start",
         )
 
-    @app_commands.command(
-        name="valo_role_log",
-        description="指定メンバーの最新VALORANT診断回答を確認します",
-    )
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.checks.has_permissions(administrator=True)
-    async def valo_role_log(
-        self, interaction: discord.Interaction, member: discord.Member
+    async def show_answer_log(
+        self,
+        interaction: discord.Interaction,
+        *,
+        user: discord.Member | None,
+        user_id: str | None,
     ) -> None:
+        if interaction.guild_id != self.log_guild_id:
+            await interaction.response.send_message(
+                "🐶 このコマンドはVALORANT診断の管理サーバーでのみ使用できます。",
+                ephemeral=True,
+            )
+            return
+        permissions = getattr(interaction.user, "guild_permissions", None)
+        if permissions is None or not permissions.administrator:
+            await interaction.response.send_message(
+                "🐶 このコマンドは管理者のみ使用できます。",
+                ephemeral=True,
+            )
+            return
         if interaction.channel_id != self.log_channel_id:
             await interaction.response.send_message(
                 "🐶 このコマンドはVALORANT診断ログチャンネルでのみ使用できます。",
                 ephemeral=True,
             )
             return
+        if user is not None and user_id is not None:
+            await interaction.response.send_message(
+                "🐶 user と user_id はどちらか一方だけ指定してください。",
+                ephemeral=True,
+            )
+            return
+        if user is None and user_id is None:
+            await interaction.response.send_message(
+                "🐶 user または user_id を指定してください。",
+                ephemeral=True,
+            )
+            return
+        target_id = user.id if user is not None else self._parse_user_id(user_id)
+        if target_id is None:
+            await interaction.response.send_message(
+                "🐶 User IDが正しくありません。",
+                ephemeral=True,
+            )
+            return
         await interaction.response.defer(ephemeral=True)
-        result = self.results.repository.get_result(member.id)
+        result = self.results.repository.get_result(target_id)
         if result is None:
             await interaction.followup.send(
                 "🐶 このユーザーのVALORANT診断結果はまだありません。",
@@ -278,24 +322,34 @@ class ValorantPlaystyleCog(commands.Cog):
             logger.exception(
                 "Failed to restore playstyle answers: requester=%s target=%s",
                 interaction.user.id,
-                member.id,
+                target_id,
             )
             await interaction.followup.send(
                 "⚠️ 保存された回答内容を安全に復元できませんでした。",
                 ephemeral=True,
             )
             return
+        target_text = await self._resolve_user_display(target_id, fallback=user)
         invoked_by = result.get("invoked_by")
-        invoked_by_text = f"<@{invoked_by}>" if invoked_by is not None else "不明"
+        invoked_by_text = (
+            await self._resolve_user_display(
+                invoked_by,
+                fallback_name=result.get("invoked_by_name"),
+            )
+            if invoked_by is not None
+            else "不明"
+        )
         category_title = CATEGORY_PRESENTATION[PlaystyleCategory(result["category"])][0]
         summary = discord.Embed(
             title="🐶 VALORANT診断 回答ログ",
             description=(
-                f"対象：{member.mention}\n"
+                f"対象：{target_text}\n"
+                f"対象User ID：{target_id}\n"
                 f"診断結果：{category_title}\n"
                 f"診断日時：{result['completed_at']}\n"
                 f"最終評価日時：{result['evaluated_at']}\n"
-                f"送信者：{invoked_by_text}\n\n"
+                f"送信者：{invoked_by_text}\n"
+                f"送信者ID：{invoked_by if invoked_by is not None else '不明'}\n\n"
                 f"{stored_result_description(result)}"
             ),
             color=0xF4A261,
@@ -314,7 +368,7 @@ class ValorantPlaystyleCog(commands.Cog):
         logger.info(
             "Playstyle answer log viewed: requester=%s target=%s",
             interaction.user.id,
-            member.id,
+            target_id,
         )
 
     async def start_questions(self, user_id: int) -> None:
@@ -392,8 +446,8 @@ class ValorantPlaystyleCog(commands.Cog):
                 discord.Embed(
                     title="⚠️ VALORANT診断結果の保存に失敗しました",
                     description=(
-                        f"対象：{session.user.mention}\n"
-                        f"送信者：<@{session.administrator_id}>"
+                        f"{self._audit_identity('対象', session.user)}\n\n"
+                        f"{self._audit_identity('送信者', user_id=session.administrator_id, fallback_name=session.administrator_name)}"
                     ),
                     color=0xE76F51,
                 ),
@@ -406,8 +460,8 @@ class ValorantPlaystyleCog(commands.Cog):
                 discord.Embed(
                     title="🐶 VALORANT診断が完了しました",
                     description=(
-                        f"対象：{session.user.mention}\n"
-                        f"送信者：<@{session.administrator_id}>\n\n"
+                        f"{self._audit_identity('対象', session.user)}\n\n"
+                        f"{self._audit_identity('送信者', user_id=session.administrator_id, fallback_name=session.administrator_name)}\n\n"
                         "🐶 診断結果\n\n"
                         f"{classification_result_description(classification, include_weighted_score=True)}"
                     ),
@@ -465,9 +519,9 @@ class ValorantPlaystyleCog(commands.Cog):
             discord.Embed(
                 title="🐶 VALORANT診断がタイムアウトしました",
                 description=(
-                    f"対象：{session.user.mention}\n"
+                    f"{self._audit_identity('対象', session.user)}\n"
                     f"進捗：{len(session.answers)} / {len(self.core.question_set.questions)}\n"
-                    f"送信者：<@{session.administrator_id}>\n\n"
+                    f"{self._audit_identity('送信者', user_id=session.administrator_id, fallback_name=session.administrator_name)}\n\n"
                     f"最後の操作から{timeout_text}経過したため、診断を終了しました。\n\n"
                     f"必要であれば、<@{self.resend_user_id}> から診断を再送してください。"
                 ),
@@ -477,13 +531,13 @@ class ValorantPlaystyleCog(commands.Cog):
         )
         self._remove_session(session.user.id)
 
-    async def _send_dm_failure_audit(self, member: Any, administrator_id: int) -> None:
+    async def _send_dm_failure_audit(self, member: Any, administrator: Any) -> None:
         await self._send_audit(
             discord.Embed(
                 title="⚠️ VALORANT診断の送信に失敗しました",
                 description=(
-                    f"対象：{member.mention}\n"
-                    f"送信者：<@{administrator_id}>\n"
+                    f"{self._audit_identity('対象', member)}\n\n"
+                    f"{self._audit_identity('送信者', administrator)}\n"
                     "理由：DMを送信できませんでした"
                 ),
                 color=0xE76F51,
@@ -492,19 +546,156 @@ class ValorantPlaystyleCog(commands.Cog):
         )
 
     async def _send_audit(self, embed: discord.Embed, *, context: str) -> bool:
-        channel = self.bot.get_channel(self.log_channel_id)
+        guild = self.bot.get_guild(self.log_guild_id)
+        if guild is None:
+            logger.error(
+                "VALORANT playstyle log guild is unavailable: guild_id=%s context=%s",
+                self.log_guild_id,
+                context,
+            )
+            return False
+        channel = guild.get_channel(self.log_channel_id)
         if channel is None:
             try:
-                channel = await self.bot.fetch_channel(self.log_channel_id)
+                channel = await guild.fetch_channel(self.log_channel_id)
             except Exception:
                 logger.exception("Failed to resolve playstyle log channel: %s", context)
                 return False
+        channel_guild_id = getattr(getattr(channel, "guild", None), "id", None)
+        if channel_guild_id != self.log_guild_id:
+            logger.error(
+                "VALORANT playstyle log channel guild mismatch: expected=%s actual=%s channel_id=%s context=%s",
+                self.log_guild_id,
+                channel_guild_id,
+                self.log_channel_id,
+                context,
+            )
+            return False
         try:
             await channel.send(embed=embed)
         except Exception:
             logger.exception("Failed to send playstyle audit log: %s", context)
             return False
         return True
+
+    def _validate_cross_guild_setup(self) -> None:
+        diagnosis_guild = self.bot.get_guild(self.diagnosis_guild_id)
+        if diagnosis_guild is None:
+            logger.error(
+                "VALORANT diagnosis guild is unavailable: guild_id=%s",
+                self.diagnosis_guild_id,
+            )
+        log_guild = self.bot.get_guild(self.log_guild_id)
+        if log_guild is None:
+            logger.error(
+                "VALORANT playstyle log guild is unavailable: guild_id=%s",
+                self.log_guild_id,
+            )
+            return
+        channel = log_guild.get_channel(self.log_channel_id)
+        if channel is None:
+            logger.error(
+                "VALORANT playstyle log channel is unavailable: guild_id=%s channel_id=%s",
+                self.log_guild_id,
+                self.log_channel_id,
+            )
+            return
+        channel_guild_id = getattr(getattr(channel, "guild", None), "id", None)
+        if channel_guild_id != self.log_guild_id:
+            logger.error(
+                "VALORANT playstyle log channel guild mismatch: expected=%s actual=%s channel_id=%s",
+                self.log_guild_id,
+                channel_guild_id,
+                self.log_channel_id,
+            )
+            return
+        bot_member = getattr(log_guild, "me", None)
+        if bot_member is None:
+            logger.error(
+                "Bot member is unavailable in VALORANT playstyle log guild: guild_id=%s",
+                self.log_guild_id,
+            )
+            return
+        permissions = channel.permissions_for(bot_member)
+        missing = [
+            name
+            for name in ("view_channel", "send_messages", "embed_links")
+            if not getattr(permissions, name, False)
+        ]
+        if missing:
+            logger.error(
+                "VALORANT playstyle log channel permissions are missing: guild_id=%s channel_id=%s permissions=%s",
+                self.log_guild_id,
+                self.log_channel_id,
+                ",".join(missing),
+            )
+            return
+        logger.info(
+            "VALORANT playstyle cross-guild setup validated: diagnosis_guild_id=%s log_guild_id=%s log_channel_id=%s",
+            self.diagnosis_guild_id,
+            self.log_guild_id,
+            self.log_channel_id,
+        )
+
+    @staticmethod
+    def _parse_user_id(value: str | None) -> int | None:
+        if value is None or not value or not value.isascii() or not value.isdigit():
+            return None
+        parsed = int(value)
+        if parsed <= 0 or parsed > MAX_DISCORD_SNOWFLAKE:
+            return None
+        return parsed
+
+    async def _resolve_user_display(
+        self,
+        user_id: int,
+        *,
+        fallback: Any | None = None,
+        fallback_name: str | None = None,
+    ) -> str:
+        diagnosis_guild = self.bot.get_guild(self.diagnosis_guild_id)
+        user = diagnosis_guild.get_member(user_id) if diagnosis_guild is not None else None
+        if user is None:
+            user = self.bot.get_user(user_id)
+        if user is None and fallback is not None and fallback.id == user_id:
+            user = fallback
+        if user is None:
+            try:
+                user = await self.bot.fetch_user(user_id)
+            except Exception:
+                logger.warning(
+                    "Failed to resolve Discord user display: user_id=%s",
+                    user_id,
+                    exc_info=True,
+                )
+        if user is not None:
+            name = getattr(user, "display_name", None) or getattr(user, "name", None)
+            mention = getattr(user, "mention", f"<@{user_id}>")
+            return f"{name or user_id} ({mention})"
+        if fallback_name:
+            return f"{fallback_name} (<@{user_id}>)"
+        return str(user_id)
+
+    @staticmethod
+    def _audit_identity(
+        label: str,
+        user: Any | None = None,
+        *,
+        user_id: int | None = None,
+        fallback_name: str | None = None,
+    ) -> str:
+        resolved_id = user.id if user is not None else user_id
+        if resolved_id is None:
+            raise ValueError("audit identity requires a user ID")
+        name = (
+            getattr(user, "display_name", None)
+            or getattr(user, "name", None)
+            or fallback_name
+            or str(resolved_id)
+        )
+        mention = getattr(user, "mention", f"<@{resolved_id}>")
+        id_label = "対象User ID" if label == "対象" else f"{label}ID"
+        return f"{label}：{name} ({mention})\n{id_label}：{resolved_id}"
 
     def _remove_session(self, user_id: int) -> None:
         session = self.sessions.pop(user_id, None)
@@ -517,5 +708,39 @@ class ValorantPlaystyleCog(commands.Cog):
         return f"{self.timeout_seconds}秒"
 
 
+class ValorantPlaystyleLogCog(commands.Cog):
+    """Management-Guild-only access to persisted diagnosis answers."""
+
+    def __init__(self, diagnosis: ValorantPlaystyleCog) -> None:
+        self.diagnosis = diagnosis
+
+    @app_commands.command(
+        name="valo_role_log",
+        description="指定ユーザーの最新VALORANT診断回答を確認します",
+    )
+    @app_commands.describe(
+        user="管理サーバーに参加している対象ユーザー",
+        user_id="対象ユーザーのDiscord User ID（数字）",
+    )
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    async def valo_role_log(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member | None = None,
+        user_id: str | None = None,
+    ) -> None:
+        await self.diagnosis.show_answer_log(
+            interaction,
+            user=user,
+            user_id=user_id,
+        )
+
+
 async def setup(bot: commands.Bot) -> None:
-    await bot.add_cog(ValorantPlaystyleCog(bot))
+    diagnosis = ValorantPlaystyleCog(bot)
+    await bot.add_cog(diagnosis)
+    await bot.add_cog(
+        ValorantPlaystyleLogCog(diagnosis),
+        guild=discord.Object(id=diagnosis.log_guild_id),
+    )

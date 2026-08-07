@@ -23,6 +23,7 @@ class FakeMember:
         name: str = "test-member",
         roles: list[FakeRole] | None = None,
         bot: bool = False,
+        administrator: bool = True,
         voice: Any | None = None,
     ) -> None:
         self.id = user_id
@@ -31,6 +32,7 @@ class FakeMember:
         self.mention = f"<@{user_id}>"
         self.roles = list(roles or [])
         self.bot = bot
+        self.guild_permissions = SimpleNamespace(administrator=administrator)
         self.voice = voice
         self.guild: FakeGuild | None = None
         self.display_avatar = SimpleNamespace(url="https://invalid/avatar.png")
@@ -115,6 +117,8 @@ class FakeGuild:
         self.channel_send_error: Exception | None = None
         for member in self.members:
             member.guild = self
+        for channel in self._channels.values():
+            channel.guild = self
 
     def get_role(self, role_id: int) -> FakeRole | None:
         return next((role for role in self.roles if role.id == role_id), None)
@@ -124,6 +128,12 @@ class FakeGuild:
 
     def get_channel(self, channel_id: int) -> FakeChannel | None:
         return self._channels.get(channel_id)
+
+    async def fetch_channel(self, channel_id: int) -> FakeChannel:
+        channel = self.get_channel(channel_id)
+        if channel is None:
+            raise LookupError(channel_id)
+        return channel
 
     async def create_category(self, name: str) -> Any:
         if self.create_error:
@@ -211,6 +221,7 @@ class FakeInteraction:
     ) -> None:
         self.user = user
         self.guild = guild
+        self.guild_id = guild.id if guild is not None else None
         self.channel_id = channel_id
         self.response = FakeResponse()
         self.followup = FakeFollowup()
