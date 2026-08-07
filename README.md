@@ -77,14 +77,13 @@ BAN設定は `valomap_bans.json` に永続保存され、Bot再起動後も保�
 > ファイル：`main.py`
 
 Bot全体のエントリーポイント。  
-`.env` の設定を読み込み、以下の12個のCogを起動します。
+`.env` の設定を読み込み、以下の11個のCogを起動します。
 
 ```bash
 cogs/welcome
 cogs/reaction_roles
 cogs/valomap
 cogs/leave_log
-cogs/valocheck
 cogs/valorecruit
 cogs/dm_forward
 cogs/2025_xmas_gacha

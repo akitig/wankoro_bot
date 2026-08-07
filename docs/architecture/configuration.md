@@ -59,7 +59,6 @@ Repository APIs; a DI container is not needed for the current application.
 | Leave log and DM forwarding | `LEAVE_LOG_CHANNEL_ID`, `DM_FORWARD_USER_ID` |
 | Reaction Roles | `REACTION_ROLE_MESSAGE_IDS`, every `RR_*` mapping |
 | Runtime storage | `RUNTIME_DATA_DIR`, systemd-provided `STATE_DIRECTORY`, `XDG_DATA_HOME` |
-| VALORANT check | `ROLE_ENJOY_ID`, `ROLE_GACHI_ID`, `VALO_ROLE_LOG_CHANNEL_ID`, `VALO_CHECK_VIEW_TIMEOUT_SEC`, `VALO_CHECK_DATA_PATH`, `VALOMAP_BANS_PATH`, `VALO_CHECK_QUESTIONS_PATH`, `VALO_CHECK_INTRO_PATH`, `VALO_CHECK_THRESH_ENJOY_ONLY`, `VALO_CHECK_THRESH_GACHI_ONLY`, `VALO_CHECK_LABEL_ENJOY`, `VALO_CHECK_LABEL_GACHI`, `VALO_CHECK_LABEL_BOTH` |
 | VALORANT recruit | `VALO_RECRUIT_CHANNEL_ID`, `VALO_ROLE_GACHI_ID`, `VALO_ROLE_ENJOY_ID`, `VALO_RECRUIT_COOLDOWN_SECONDS` |
 | Christmas event | `XMAS_GACHA_CSV`, `XMAS_GACHA_STATE`, `XMAS_GACHA_CHANNEL_ID`, `XMAS_GACHA_CUTOFF` |
 | New Year bell event | `JOYA_DATA_PATH`, `JOYA_MIN_SEC`, `JOYA_MAX_SEC`, `JOYA_WINNER_ROLE_ID`, `JOYA_CHANNEL_ID` |
@@ -79,11 +78,10 @@ Config does not rebuild it below `/var/lib`.
 dedicated Welcome settings above. `RR_V_*` remains part of the Reaction Role
 configuration even though its names are discovered dynamically. Runtime path
 overrides are optional and are grouped at the end of `.env.example`; static
-master-data paths such as the VALORANT intro/questions and Xmas CSV remain with
-their owning features.
+master-data paths such as the Xmas CSV remain with their owning features.
 
 Existing feature-specific path whitespace behavior is preserved. Omikuji and
-Xmas paths are stripped; Joya and VALORANT check paths remain literal. An empty
+Xmas paths are stripped; Joya paths remain literal. An empty
 feature path is treated as unset. `VALOMAP_BANS_PATH` provides the same override
 for Valomap while retaining relative paths as working-directory-relative.
 
@@ -94,9 +92,6 @@ All JSON and CSV paths exposed through Config use `pathlib.Path`.
 | Config field | Runtime-root filename |
 |---|---|
 | `valomap_bans_path` | `valomap_bans.json` |
-| `valo_check_data_path` | `valo_check_completed.json` |
-| `valo_check_questions_path` | `data/valo_questions.json` |
-| `valo_check_intro_path` | `data/valo_intro.json` |
 | `xmas_gacha_csv_path` | `/home/akitig/Desktop/Bot/Toureikai/Wankorobot/data/2025_xmas_gacha.csv` |
 | `xmas_gacha_state_path` | `xmas_gacha_state.json` |
 | `joya_data_path` | `2026_joya_state.json` |

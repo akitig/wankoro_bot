@@ -21,8 +21,7 @@ wankorobot/
 │       │   │   ├── leave_log.py
 │       │   │   └── dm_forward.py
 │       │   ├── roles/
-│       │   │   ├── reaction_roles.py
-│       │   │   └── valocheck.py
+│       │   │   └── reaction_roles.py
 │       │   ├── valorant/
 │       │   │   ├── maps.py
 │       │   │   └── recruit.py
@@ -39,9 +38,6 @@ wankorobot/
 ├── config/
 │   ├── examples/
 │   │   └── wankorobot.env.example
-│   ├── valocheck/
-│   │   ├── intro.json
-│   │   └── questions.json
 │   └── events/
 │       └── 2025-xmas/
 │           └── rewards.csv

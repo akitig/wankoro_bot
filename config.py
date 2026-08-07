@@ -217,19 +217,6 @@ class Config:
     omikuji_panel_channel_id: int
 
     valomap_bans_path: Path
-    valo_check_data_path: Path
-    valo_check_questions_path: Path
-    valo_check_intro_path: Path
-    valo_role_enjoy_id: int | None
-    valo_role_gachi_id: int | None
-    valo_role_log_channel_id: int | None
-    valo_check_view_timeout_sec: int
-    valo_check_thresh_enjoy_only: int
-    valo_check_thresh_gachi_only: int
-    valo_check_label_enjoy: str
-    valo_check_label_gachi: str
-    valo_check_label_both: str
-
     valo_recruit_channel_id: int | None
     valo_recruit_gachi_role_id: int | None
     valo_recruit_enjoy_role_id: int | None
@@ -321,50 +308,6 @@ def _load_config() -> Config:
             explicit_value=os.getenv("VALOMAP_BANS_PATH"),
             runtime_dir=runtime_data_dir,
             filename="valomap_bans.json",
-        ),
-        valo_check_data_path=resolve_runtime_path(
-            explicit_value=os.getenv("VALO_CHECK_DATA_PATH"),
-            runtime_dir=runtime_data_dir,
-            filename="valo_check_completed.json",
-        ),
-        valo_check_questions_path=Path(
-            _string_with_default(
-                "VALO_CHECK_QUESTIONS_PATH",
-                "data/valo_questions.json",
-            )
-        ),
-        valo_check_intro_path=Path(
-            _string_with_default(
-                "VALO_CHECK_INTRO_PATH",
-                "data/valo_intro.json",
-            )
-        ),
-        valo_role_enjoy_id=_optional_int("ROLE_ENJOY_ID"),
-        valo_role_gachi_id=_optional_int("ROLE_GACHI_ID"),
-        valo_role_log_channel_id=_optional_int("VALO_ROLE_LOG_CHANNEL_ID"),
-        valo_check_view_timeout_sec=_int_with_default(
-            "VALO_CHECK_VIEW_TIMEOUT_SEC",
-            1800,
-        ),
-        valo_check_thresh_enjoy_only=_int_with_default(
-            "VALO_CHECK_THRESH_ENJOY_ONLY",
-            6,
-        ),
-        valo_check_thresh_gachi_only=_int_with_default(
-            "VALO_CHECK_THRESH_GACHI_ONLY",
-            12,
-        ),
-        valo_check_label_enjoy=_string_with_default(
-            "VALO_CHECK_LABEL_ENJOY",
-            "ENJOYのみ",
-        ),
-        valo_check_label_gachi=_string_with_default(
-            "VALO_CHECK_LABEL_GACHI",
-            "GACHIのみ",
-        ),
-        valo_check_label_both=_string_with_default(
-            "VALO_CHECK_LABEL_BOTH",
-            "GACHI+ENJOY",
         ),
         valo_recruit_channel_id=_optional_int("VALO_RECRUIT_CHANNEL_ID"),
         valo_recruit_gachi_role_id=_optional_int("VALO_ROLE_GACHI_ID"),

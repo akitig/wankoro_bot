@@ -67,8 +67,8 @@ def test_config_uses_home_fallback(
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
 
-    assert get_config().valo_check_data_path == (
-        home / ".local" / "share" / "wankoro-bot" / "valo_check_completed.json"
+    assert get_config().joya_data_path == (
+        home / ".local" / "share" / "wankoro-bot" / "2026_joya_state.json"
     )
 
 
@@ -77,7 +77,7 @@ def test_config_uses_data_fallback_without_home(
 ) -> None:
     monkeypatch.delenv("HOME", raising=False)
 
-    assert get_config().valo_check_data_path == Path("data/valo_check_completed.json")
+    assert get_config().joya_data_path == Path("data/2026_joya_state.json")
 
 
 def test_runtime_data_dir_ignores_empty_values_and_strips_whitespace(tmp_path: Path) -> None:
@@ -104,7 +104,6 @@ def test_state_directory_is_used_as_provided(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("environment_name", "field_name", "filename"),
     [
-        ("VALO_CHECK_DATA_PATH", "valo_check_data_path", "valo_check_completed.json"),
         ("OMIKUJI_POINTS_PATH", "omikuji_points_path", "2026_omikujii_points.json"),
         ("JOYA_DATA_PATH", "joya_data_path", "2026_joya_state.json"),
         ("XMAS_GACHA_STATE", "xmas_gacha_state_path", "xmas_gacha_state.json"),
@@ -134,7 +133,6 @@ def test_config_runtime_paths_use_root_when_individual_path_is_missing(
 @pytest.mark.parametrize(
     ("environment_name", "field_name"),
     [
-        ("VALO_CHECK_DATA_PATH", "valo_check_data_path"),
         ("OMIKUJI_POINTS_PATH", "omikuji_points_path"),
         ("JOYA_DATA_PATH", "joya_data_path"),
         ("XMAS_GACHA_STATE", "xmas_gacha_state_path"),
@@ -188,7 +186,6 @@ def test_config_creation_has_no_runtime_filesystem_side_effects(
 @pytest.mark.parametrize(
     ("environment_name", "field_name", "filename"),
     [
-        ("VALO_CHECK_DATA_PATH", "valo_check_data_path", "valo_check_completed.json"),
         ("OMIKUJI_POINTS_PATH", "omikuji_points_path", "2026_omikujii_points.json"),
         ("JOYA_DATA_PATH", "joya_data_path", "2026_joya_state.json"),
         ("XMAS_GACHA_STATE", "xmas_gacha_state_path", "xmas_gacha_state.json"),

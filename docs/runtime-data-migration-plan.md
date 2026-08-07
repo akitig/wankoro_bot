@@ -15,14 +15,13 @@ SQLite移行や複数プロセス対応は対象外です。
 
 | データ | 現行Config | 読み書き箇所 | 不存在時の初期値 | Git状態 |
 |---|---|---|---|---|
-| VALORANT診断完了 | `VALO_CHECK_DATA_PATH` | `services/valocheck_service.py` | `{}` | 追跡中 |
 | おみくじポイント | `OMIKUJI_POINTS_PATH` | `cogs/2026_omikuji_gacha.py` | `{}` | 追跡中 |
 | 除夜の鐘state | `JOYA_DATA_PATH` | `cogs/2026_joya_gacha.py` | `{"guilds": {}, "users": {}}` | 追跡中 |
 | Xmas state | `XMAS_GACHA_STATE` | `cogs/2025_xmas_gacha.py` | `{"orig_nick": {}, "panel_message_id": 0}` | 追跡中 |
 | VALORANT map BAN | Config内固定 `valomap_bans.json` | `cogs/valomap.py` | `{"bans": []}` | 未追跡・ignore済み |
 
-静的master dataである `data/valo_questions.json`、`data/valo_intro.json`、
-`data/2025_xmas_gacha.csv` は移行対象ではなく、引き続きGitで管理します。
+静的master dataである `data/2025_xmas_gacha.csv` は移行対象ではなく、
+引き続きGitで管理します。
 
 JSON I/Oは `utils/json_store.py` ではなく `storage/json_store.py` に集約されています。
 UTF-8、親ディレクトリ作成、一時ファイル、`fsync()`、`os.replace()`を使用します。
@@ -79,7 +78,6 @@ system-level Unitでは保存先が `/var/lib/wankoro-bot` となり、systemd�
 
 ```text
 /var/lib/wankoro-bot/
-├── valo_check_completed.json
 ├── 2026_omikujii_points.json
 ├── 2026_joya_state.json
 ├── xmas_gacha_state.json
@@ -104,17 +102,15 @@ Configは、既存の個別path設定を壊さず、次の優先順位でruntime
 4. `~/.local/share/wankoro-bot`
 5. homeを解決できない場合は、後方互換としてWorkingDirectory相対の `data/`
 
-個別設定 `VALO_CHECK_DATA_PATH`、`OMIKUJI_POINTS_PATH`、`JOYA_DATA_PATH`、
+個別設定 `OMIKUJI_POINTS_PATH`、`JOYA_DATA_PATH`、
 `XMAS_GACHA_STATE` が設定されている場合は、後方互換のためroot派生値より優先します。
 Valomapには `VALOMAP_BANS_PATH` overrideと同じrootから派生するConfig pathを追加します。master dataの
-`VALO_CHECK_QUESTIONS_PATH`、`VALO_CHECK_INTRO_PATH`、`XMAS_GACHA_CSV` はruntime rootへ
-移しません。
+`XMAS_GACHA_CSV` はruntime rootへ移しません。
 
 本番切替では、個別pathを一度に次へ変更する方法が最も監査しやすい案です。
 
 ```env
 RUNTIME_DATA_DIR=/var/lib/wankoro-bot
-VALO_CHECK_DATA_PATH=/var/lib/wankoro-bot/valo_check_completed.json
 OMIKUJI_POINTS_PATH=/var/lib/wankoro-bot/2026_omikujii_points.json
 JOYA_DATA_PATH=/var/lib/wankoro-bot/2026_joya_state.json
 XMAS_GACHA_STATE=/var/lib/wankoro-bot/xmas_gacha_state.json
@@ -155,14 +151,13 @@ sha256sum OLD_VALO OLD_OMIKUJI OLD_JOYA OLD_XMAS > runtime-before.sha256
 1. 承認済みメンテナンス開始時刻を記録する。
 2. Botを停止して全writerを止める。想定停止時間は5〜15分だが、検証不合格時は
    再開せずロールバックする。
-3. mode `0700` の日時付きバックアップdirectoryへ4ファイルと、存在する場合は
+3. mode `0700` の日時付きバックアップdirectoryへ3ファイルと、存在する場合は
    `valomap_bans.json`をコピーする。
 4. コピー前後のSHA-256が一致することを確認する。
 5. バックアップを別の一時directoryへ復元し、JSON構文、schema、件数を検証する。
 
 内容や個人IDを表示せず、最低限次を確認します。
 
-- VALORANT診断: top-levelがobject、各recordがobject、record件数
 - おみくじ: top-levelがobject、keyが数字文字列、valueが整数、ユーザー件数
 - 除夜の鐘: `guilds`と`users`がobject、各件数
 - Xmas: `orig_nick`がobject、`panel_message_id`が整数、guild/user件数
@@ -200,12 +195,12 @@ systemd操作はこの文書作成PRでは実施せず、承認済み作業者�
 - 設定された全runtime pathが `/var/lib/wankoro-bot` 配下である
 - 新pathだけが更新され、旧pathのmtimeとSHA-256が変わらない
 - 一時ファイルを作成しatomic replaceできる所有権・modeである
-- VALORANT診断完了件数、おみくじユーザー件数、除夜の鐘state、Xmas state、map BAN数が
+- おみくじユーザー件数、除夜の鐘state、Xmas state、map BAN数が
   移行前と一致する
 
 Discord上では、表示文言やデータを公開ログへ転記せず、権限のあるテスト担当者が
-VALORANT診断の既存完了判定、おみくじポイント確認、除夜の鐘state表示・操作、Xmas
-パネル復元、Valomap BAN表示を代表1件ずつ確認します。
+おみくじポイント確認、除夜の鐘state表示・操作、Xmasパネル復元、Valomap BAN表示を
+代表1件ずつ確認します。
 
 ## 新旧データの保持とロールバック
 
@@ -238,12 +233,10 @@ deployで削除しません。
 
 ```bash
 git rm --cached -- \
-  data/valo_check_completed.json \
   data/2026_omikujii_points.json \
   data/2026_joya_state.json \
   data/xmas_gacha_state.json
 git check-ignore -v -- \
-  data/valo_check_completed.json \
   data/2026_omikujii_points.json \
   data/2026_joya_state.json \
   data/xmas_gacha_state.json
@@ -271,11 +264,10 @@ directoryとファイルを作ります。不正JSONは初期値で上書きせ�
 
 ```bash
 test -z "$(git ls-files -- \
-  data/valo_check_completed.json \
   data/2026_omikujii_points.json \
   data/2026_joya_state.json \
   data/xmas_gacha_state.json)"
-git check-ignore -q -- data/valo_check_completed.json
+git check-ignore -q -- data/2026_omikujii_points.json
 ```
 
 加えて、commit前にruntime filename、Discord snowflakeらしいkey、回答・score・nicknameを
