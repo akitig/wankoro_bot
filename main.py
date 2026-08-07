@@ -43,15 +43,28 @@ class MyBot(commands.Bot):
             except Exception:
                 logger.exception("Cog failed to load: %s", cog)
 
-        guild = discord.Object(id=config.guild_id)
+        diagnosis_guild = discord.Object(id=config.guild_id)
+        log_guild_id = config.require_id(
+            config.valo_playstyle_log_guild_id,
+            "VALO_PLAYSTYLE_LOG_GUILD_ID",
+        )
+        log_guild = discord.Object(id=log_guild_id)
 
         # Cog側の @app_commands.command をギルドに即反映させる
-        self.tree.copy_global_to(guild=guild)
-        await self.tree.sync(guild=guild)
+        self.tree.copy_global_to(guild=diagnosis_guild)
+        await self.tree.sync(guild=diagnosis_guild)
+        try:
+            await self.tree.sync(guild=log_guild)
+        except discord.HTTPException:
+            logger.exception(
+                "Failed to sync management-guild commands: guild_id=%s",
+                log_guild_id,
+            )
 
         logger.info(
-            "Application commands synced: count=%d",
-            len(self.tree.get_commands(guild=guild)),
+            "Application commands synced: diagnosis_guild_count=%d log_guild_count=%d",
+            len(self.tree.get_commands(guild=diagnosis_guild)),
+            len(self.tree.get_commands(guild=log_guild)),
         )
 
 bot = MyBot(

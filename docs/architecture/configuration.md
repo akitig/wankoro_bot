@@ -60,7 +60,7 @@ Repository APIs; a DI container is not needed for the current application.
 | Reaction Roles | `REACTION_ROLE_MESSAGE_IDS`, every `RR_*` mapping |
 | Runtime storage | `RUNTIME_DATA_DIR`, systemd-provided `STATE_DIRECTORY`, `XDG_DATA_HOME` |
 | VALORANT recruit | `VALO_RECRUIT_CHANNEL_ID`, `VALO_ROLE_GACHI_ID`, `VALO_ROLE_ENJOY_ID`, `VALO_RECRUIT_COOLDOWN_SECONDS` |
-| VALORANT playstyle diagnosis | `VALO_PLAYSTYLE_GACHI_MIN`, `VALO_PLAYSTYLE_NEUTRAL_MIN`, `VALO_PLAYSTYLE_GACHI_TEAM_MIN`, `VALO_PLAYSTYLE_GACHI_IMPROVEMENT_MIN`, `VALO_PLAYSTYLE_GACHI_FOCUS_MIN`, `VALO_PLAYSTYLE_TIMEOUT_SECONDS`, `VALO_PLAYSTYLE_LOG_CHANNEL_ID`, `VALO_PLAYSTYLE_RESEND_USER_ID`, `VALO_PLAYSTYLE_RESULTS_PATH` |
+| VALORANT playstyle diagnosis | `VALO_PLAYSTYLE_GACHI_MIN`, `VALO_PLAYSTYLE_NEUTRAL_MIN`, `VALO_PLAYSTYLE_GACHI_TEAM_MIN`, `VALO_PLAYSTYLE_GACHI_IMPROVEMENT_MIN`, `VALO_PLAYSTYLE_GACHI_FOCUS_MIN`, `VALO_PLAYSTYLE_TIMEOUT_SECONDS`, `VALO_PLAYSTYLE_LOG_GUILD_ID`, `VALO_PLAYSTYLE_LOG_CHANNEL_ID`, `VALO_PLAYSTYLE_RESEND_USER_ID`, `VALO_PLAYSTYLE_RESULTS_PATH` |
 | Christmas event | `XMAS_GACHA_CSV`, `XMAS_GACHA_STATE`, `XMAS_GACHA_CHANNEL_ID`, `XMAS_GACHA_CUTOFF` |
 | New Year bell event | `JOYA_DATA_PATH`, `JOYA_MIN_SEC`, `JOYA_MAX_SEC`, `JOYA_WINNER_ROLE_ID`, `JOYA_CHANNEL_ID` |
 | Omikuji event | `OMIKUJI_POINTS_PATH`, `OMIKUJI_REST_VC_ID`, `OMIKUJI_RESETTER_USER_ID`, `OMIKUJI_PANEL_CHANNEL_ID` |
@@ -116,10 +116,13 @@ GACHIのaxis minimumだけをdeployment configurationとして扱います。す
 Config errorになります。Serviceは環境を直接読まず、CogがConfigからimmutableな
 `ClassificationPolicy`を構築して注入します。
 
-`VALO_PLAYSTYLE_LOG_CHANNEL_ID`は、診断送信、診断完了、タイムアウト、
-重要な送信・保存失敗を記録する監査・運用ログチャンネルです。管理者専用の
-`/valo_role_log @user`はこのチャンネル内でのみ実行でき、保存済みの最新V2診断の
-回答詳細を実行者だけにephemeral表示します。
+`GUILD_ID`は診断用Guild、`VALO_PLAYSTYLE_LOG_GUILD_ID`は管理用Guild、
+`VALO_PLAYSTYLE_LOG_CHANNEL_ID`は管理用Guild内で診断送信、完了、タイムアウト、
+重要な失敗を記録する監査Channelです。`/valo_role`は診断用Guildだけに、
+`/valo_role_log`は管理用Guildだけに同期します。後者は管理用GuildのAdministratorが
+指定Channel内でのみ使用でき、保存済み最新V2診断の回答詳細をephemeral表示します。
+`user_id`へdecimal Discord User IDを指定すれば、対象が管理用Guildに未参加でも
+回答を確認できます。
 
 ## Logging
 
