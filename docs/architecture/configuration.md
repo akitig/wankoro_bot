@@ -60,6 +60,7 @@ Repository APIs; a DI container is not needed for the current application.
 | Reaction Roles | `REACTION_ROLE_MESSAGE_IDS`, every `RR_*` mapping |
 | Runtime storage | `RUNTIME_DATA_DIR`, systemd-provided `STATE_DIRECTORY`, `XDG_DATA_HOME` |
 | VALORANT recruit | `VALO_RECRUIT_CHANNEL_ID`, `VALO_ROLE_GACHI_ID`, `VALO_ROLE_ENJOY_ID`, `VALO_RECRUIT_COOLDOWN_SECONDS` |
+| VALORANT playstyle diagnosis | `VALO_PLAYSTYLE_GACHI_MIN`, `VALO_PLAYSTYLE_NEUTRAL_MIN`, `VALO_PLAYSTYLE_GACHI_TEAM_MIN`, `VALO_PLAYSTYLE_GACHI_IMPROVEMENT_MIN`, `VALO_PLAYSTYLE_GACHI_FOCUS_MIN`, `VALO_PLAYSTYLE_TIMEOUT_SECONDS`, `VALO_PLAYSTYLE_TIMEOUT_CHANNEL_ID`, `VALO_PLAYSTYLE_RESEND_USER_ID`, `VALO_PLAYSTYLE_RESULTS_PATH` |
 | Christmas event | `XMAS_GACHA_CSV`, `XMAS_GACHA_STATE`, `XMAS_GACHA_CHANNEL_ID`, `XMAS_GACHA_CUTOFF` |
 | New Year bell event | `JOYA_DATA_PATH`, `JOYA_MIN_SEC`, `JOYA_MAX_SEC`, `JOYA_WINNER_ROLE_ID`, `JOYA_CHANNEL_ID` |
 | Omikuji event | `OMIKUJI_POINTS_PATH`, `OMIKUJI_REST_VC_ID`, `OMIKUJI_RESETTER_USER_ID`, `OMIKUJI_PANEL_CHANNEL_ID` |
@@ -92,6 +93,7 @@ All JSON and CSV paths exposed through Config use `pathlib.Path`.
 | Config field | Runtime-root filename |
 |---|---|
 | `valomap_bans_path` | `valomap_bans.json` |
+| `valo_playstyle_results_path` | `valorant_playstyle_results.json` |
 | `xmas_gacha_csv_path` | `/home/akitig/Desktop/Bot/Toureikai/Wankorobot/data/2025_xmas_gacha.csv` |
 | `xmas_gacha_state_path` | `xmas_gacha_state.json` |
 | `joya_data_path` | `2026_joya_state.json` |
@@ -107,6 +109,12 @@ empty, malformed, reversed, or overlapping windows. The default timezone is
 
 Resolving Config paths only constructs `Path` values. It does not create the
 runtime directory or any JSON file.
+
+VALORANTプレイスタイル診断のweightsは診断仕様としてコードに固定し、分類thresholdと
+GACHIのaxis minimumだけをdeployment configurationとして扱います。すべて0.0から1.0の
+範囲で、`VALO_PLAYSTYLE_NEUTRAL_MIN`は`VALO_PLAYSTYLE_GACHI_MIN`未満でなければ起動時に
+Config errorになります。Serviceは環境を直接読まず、CogがConfigからimmutableな
+`ClassificationPolicy`を構築して注入します。
 
 ## Logging
 

@@ -48,21 +48,16 @@ class PlaystyleScore:
 
 class PlaystyleCategory(str, Enum):
     ENJOY = "enjoy"
-    ENJOY_LEANING = "enjoy_leaning"
-    BALANCED = "balanced"
-    GACHI_LEANING = "gachi_leaning"
+    NEUTRAL = "neutral"
     GACHI = "gachi"
 
 
 @dataclass(frozen=True)
 class ClassificationPolicy:
     weights: Mapping[str, float]
-    gachi_weighted_minimum: float
+    gachi_minimum: float
     gachi_axis_minimums: Mapping[str, float]
-    gachi_leaning_weighted_minimum: float
-    gachi_leaning_axis_minimums: Mapping[str, float]
-    balanced_minimum: float
-    enjoy_leaning_minimum: float
+    neutral_minimum: float
 
     def __post_init__(self) -> None:
         primary_axes = {"win", "team", "improvement", "focus"}
@@ -70,32 +65,36 @@ class ClassificationPolicy:
             raise ValueError("classification weights must contain the four primary axes")
         if not isclose(sum(self.weights.values()), 1.0):
             raise ValueError("classification weights must sum to 1.0")
-        if set(self.gachi_axis_minimums) != primary_axes:
-            raise ValueError("GACHI minimums must contain the four primary axes")
-        if set(self.gachi_leaning_axis_minimums) != {
-            "team",
-            "improvement",
-            "focus",
-        }:
-            raise ValueError(
-                "GACHI_LEANING minimums must contain team, improvement, and focus"
-            )
+        if any(not 0.0 <= value <= 1.0 for value in self.weights.values()):
+            raise ValueError("classification weights must be between 0.0 and 1.0")
+        if set(self.gachi_axis_minimums) != {"team", "improvement", "focus"}:
+            raise ValueError("GACHI minimums must contain team, improvement, and focus")
+        values = (
+            self.gachi_minimum,
+            self.neutral_minimum,
+            *self.gachi_axis_minimums.values(),
+        )
+        if any(not 0.0 <= value <= 1.0 for value in values):
+            raise ValueError("classification minimums must be between 0.0 and 1.0")
+        if self.neutral_minimum >= self.gachi_minimum:
+            raise ValueError("neutral minimum must be less than GACHI minimum")
+        object.__setattr__(self, "weights", MappingProxyType(dict(self.weights)))
+        object.__setattr__(
+            self,
+            "gachi_axis_minimums",
+            MappingProxyType(dict(self.gachi_axis_minimums)),
+        )
 
 
 DEFAULT_CLASSIFICATION_POLICY = ClassificationPolicy(
     weights=MappingProxyType(
         {"win": 0.20, "team": 0.35, "improvement": 0.25, "focus": 0.20}
     ),
-    gachi_weighted_minimum=0.80,
+    gachi_minimum=0.65,
     gachi_axis_minimums=MappingProxyType(
-        {"team": 0.80, "improvement": 2 / 3, "focus": 2 / 3, "win": 5 / 9}
-    ),
-    gachi_leaning_weighted_minimum=0.65,
-    gachi_leaning_axis_minimums=MappingProxyType(
         {"team": 0.60, "improvement": 5 / 9, "focus": 5 / 9}
     ),
-    balanced_minimum=0.45,
-    enjoy_leaning_minimum=0.25,
+    neutral_minimum=0.35,
 )
 
 
@@ -208,19 +207,12 @@ class ValorantPlaystyleService:
             for axis, weight in policy.weights.items()
         )
 
-        if weighted_score >= policy.gachi_weighted_minimum and self._meets_minimums(
+        if weighted_score >= policy.gachi_minimum and self._meets_minimums(
             score, policy.gachi_axis_minimums
         ):
             category = PlaystyleCategory.GACHI
-        elif (
-            weighted_score >= policy.gachi_leaning_weighted_minimum
-            and self._meets_minimums(score, policy.gachi_leaning_axis_minimums)
-        ):
-            category = PlaystyleCategory.GACHI_LEANING
-        elif weighted_score >= policy.balanced_minimum:
-            category = PlaystyleCategory.BALANCED
-        elif weighted_score >= policy.enjoy_leaning_minimum:
-            category = PlaystyleCategory.ENJOY_LEANING
+        elif weighted_score >= policy.neutral_minimum:
+            category = PlaystyleCategory.NEUTRAL
         else:
             category = PlaystyleCategory.ENJOY
         return PlaystyleClassification(category, weighted_score, score)

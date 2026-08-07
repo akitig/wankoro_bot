@@ -24,6 +24,7 @@ COGS = [
     "cogs.reaction_roles",
     "cogs.valomap",
     "cogs.leave_log",
+    "cogs.valorant_playstyle",
     "cogs.valorecruit",
     "cogs.dm_forward",
     "cogs.2025_xmas_gacha",

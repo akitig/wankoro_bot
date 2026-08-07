@@ -14,7 +14,7 @@ RUNTIME_ENV_NAMES = (
     "STATE_DIRECTORY",
     "XDG_DATA_HOME",
     "HOME",
-    "VALO_CHECK_DATA_PATH",
+    "VALO_PLAYSTYLE_RESULTS_PATH",
     "OMIKUJI_POINTS_PATH",
     "JOYA_DATA_PATH",
     "XMAS_GACHA_STATE",
@@ -108,6 +108,11 @@ def test_state_directory_is_used_as_provided(tmp_path: Path) -> None:
         ("JOYA_DATA_PATH", "joya_data_path", "2026_joya_state.json"),
         ("XMAS_GACHA_STATE", "xmas_gacha_state_path", "xmas_gacha_state.json"),
         ("VALOMAP_BANS_PATH", "valomap_bans_path", "valomap_bans.json"),
+        (
+            "VALO_PLAYSTYLE_RESULTS_PATH",
+            "valo_playstyle_results_path",
+            "valorant_playstyle_results.json",
+        ),
         ("BUMP_PANEL_STATE_PATH", "bump_panel_state_path", "bump_panel_state.json"),
         (
             "AVAILABILITY_POLL_STATE_PATH",
@@ -137,6 +142,7 @@ def test_config_runtime_paths_use_root_when_individual_path_is_missing(
         ("JOYA_DATA_PATH", "joya_data_path"),
         ("XMAS_GACHA_STATE", "xmas_gacha_state_path"),
         ("VALOMAP_BANS_PATH", "valomap_bans_path"),
+        ("VALO_PLAYSTYLE_RESULTS_PATH", "valo_playstyle_results_path"),
         ("BUMP_PANEL_STATE_PATH", "bump_panel_state_path"),
         ("AVAILABILITY_POLL_STATE_PATH", "availability_poll_state_path"),
     ],
@@ -190,6 +196,11 @@ def test_config_creation_has_no_runtime_filesystem_side_effects(
         ("JOYA_DATA_PATH", "joya_data_path", "2026_joya_state.json"),
         ("XMAS_GACHA_STATE", "xmas_gacha_state_path", "xmas_gacha_state.json"),
         ("VALOMAP_BANS_PATH", "valomap_bans_path", "valomap_bans.json"),
+        (
+            "VALO_PLAYSTYLE_RESULTS_PATH",
+            "valo_playstyle_results_path",
+            "valorant_playstyle_results.json",
+        ),
         ("BUMP_PANEL_STATE_PATH", "bump_panel_state_path", "bump_panel_state.json"),
         (
             "AVAILABILITY_POLL_STATE_PATH",

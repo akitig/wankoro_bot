@@ -79,6 +79,32 @@ def _positive_int_with_default(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
+def _strict_positive_int_with_default(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        parsed = int(value.strip())
+    except ValueError as error:
+        raise ValueError(f"{name} must be a positive integer") from error
+    if parsed <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return parsed
+
+
+def _unit_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        parsed = float(value.strip())
+    except ValueError as error:
+        raise ValueError(f"{name} must be a number between 0.0 and 1.0") from error
+    if not 0.0 <= parsed <= 1.0:
+        raise ValueError(f"{name} must be between 0.0 and 1.0")
+    return parsed
+
+
 def _string_with_default(name: str, default: str, *, strip: bool = False) -> str:
     value = os.getenv(name)
     if value is None or (not strip and not value) or (strip and not value.strip()):
@@ -217,6 +243,15 @@ class Config:
     omikuji_panel_channel_id: int
 
     valomap_bans_path: Path
+    valo_playstyle_results_path: Path
+    valo_playstyle_gachi_min: float
+    valo_playstyle_neutral_min: float
+    valo_playstyle_gachi_team_min: float
+    valo_playstyle_gachi_improvement_min: float
+    valo_playstyle_gachi_focus_min: float
+    valo_playstyle_timeout_seconds: int
+    valo_playstyle_timeout_channel_id: int | None
+    valo_playstyle_resend_user_id: int | None
     valo_recruit_channel_id: int | None
     valo_recruit_gachi_role_id: int | None
     valo_recruit_enjoy_role_id: int | None
@@ -235,6 +270,13 @@ class Config:
     availability_poll_state_path: Path
     availability_poll_audit_guild_id: int | None
     availability_poll_audit_channel_id: int | None
+
+    def __post_init__(self) -> None:
+        if self.valo_playstyle_neutral_min >= self.valo_playstyle_gachi_min:
+            raise ValueError(
+                "VALO_PLAYSTYLE_NEUTRAL_MIN must be less than "
+                "VALO_PLAYSTYLE_GACHI_MIN"
+            )
 
     def require_id(self, value: int | None, environment_name: str) -> int:
         """Return a required Cog setting or fail when that Cog is constructed."""
@@ -308,6 +350,34 @@ def _load_config() -> Config:
             explicit_value=os.getenv("VALOMAP_BANS_PATH"),
             runtime_dir=runtime_data_dir,
             filename="valomap_bans.json",
+        ),
+        valo_playstyle_results_path=resolve_runtime_path(
+            explicit_value=os.getenv("VALO_PLAYSTYLE_RESULTS_PATH"),
+            runtime_dir=runtime_data_dir,
+            filename="valorant_playstyle_results.json",
+            strip=True,
+        ),
+        valo_playstyle_gachi_min=_unit_float("VALO_PLAYSTYLE_GACHI_MIN", 0.65),
+        valo_playstyle_neutral_min=_unit_float(
+            "VALO_PLAYSTYLE_NEUTRAL_MIN", 0.35
+        ),
+        valo_playstyle_gachi_team_min=_unit_float(
+            "VALO_PLAYSTYLE_GACHI_TEAM_MIN", 0.60
+        ),
+        valo_playstyle_gachi_improvement_min=_unit_float(
+            "VALO_PLAYSTYLE_GACHI_IMPROVEMENT_MIN", 5 / 9
+        ),
+        valo_playstyle_gachi_focus_min=_unit_float(
+            "VALO_PLAYSTYLE_GACHI_FOCUS_MIN", 5 / 9
+        ),
+        valo_playstyle_timeout_seconds=_strict_positive_int_with_default(
+            "VALO_PLAYSTYLE_TIMEOUT_SECONDS", 1800
+        ),
+        valo_playstyle_timeout_channel_id=_strict_optional_id(
+            "VALO_PLAYSTYLE_TIMEOUT_CHANNEL_ID"
+        ),
+        valo_playstyle_resend_user_id=_strict_optional_id(
+            "VALO_PLAYSTYLE_RESEND_USER_ID"
         ),
         valo_recruit_channel_id=_optional_int("VALO_RECRUIT_CHANNEL_ID"),
         valo_recruit_gachi_role_id=_optional_int("VALO_ROLE_GACHI_ID"),

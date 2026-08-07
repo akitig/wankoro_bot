@@ -14,42 +14,37 @@ from services.valorant_playstyle_service import (
 )
 
 QUESTION_PATH = Path(__file__).parents[1] / "data" / "valorant_playstyle_questions.json"
-PRIMARY_AXES = ("win", "team", "improvement", "focus")
 
 
-@pytest.fixture
-def service() -> ValorantPlaystyleService:
-    return ValorantPlaystyleService(questions_path=QUESTION_PATH)
+def _service(policy=DEFAULT_CLASSIFICATION_POLICY) -> ValorantPlaystyleService:
+    return ValorantPlaystyleService(questions_path=QUESTION_PATH, classification_policy=policy)
 
 
-def _score(
-    *,
-    win: float,
-    team: float,
-    improvement: float,
-    focus: float,
-    feedback_receive: float = 0.0,
-    feedback_give: float = 0.0,
-    missing: tuple[str, ...] = (),
-) -> PlaystyleScore:
-    normalized = {
-        "win": win,
-        "team": team,
-        "improvement": improvement,
-        "focus": focus,
-        "feedback_receive": feedback_receive,
-        "feedback_give": feedback_give,
+def _score(value: float, *, team=None, improvement=None, focus=None, win=None, missing=()):
+    values = {
+        "win": value if win is None else win,
+        "team": value if team is None else team,
+        "improvement": value if improvement is None else improvement,
+        "focus": value if focus is None else focus,
+        "feedback_receive": 0.0,
+        "feedback_give": 0.0,
     }
-    axes = {
-        axis: AxisScore(score=0, max_score=1, normalized=value)
-        for axis, value in normalized.items()
+    axes = MappingProxyType(
+        {axis: AxisScore(0, 1, normalized) for axis, normalized in values.items()}
+    )
+    return PlaystyleScore(axes, (), missing)
+
+
+def test_categories_are_only_the_stable_three_values() -> None:
+    assert {category.value for category in PlaystyleCategory} == {
+        "enjoy",
+        "neutral",
+        "gachi",
     }
-    return PlaystyleScore(MappingProxyType(axes), (), missing)
 
 
-def test_default_weights_are_complete_and_sum_to_one() -> None:
+def test_default_policy_values_and_feedback_exclusion() -> None:
     policy = DEFAULT_CLASSIFICATION_POLICY
-
     assert dict(policy.weights) == {
         "win": 0.20,
         "team": 0.35,
@@ -57,229 +52,91 @@ def test_default_weights_are_complete_and_sum_to_one() -> None:
         "focus": 0.20,
     }
     assert sum(policy.weights.values()) == pytest.approx(1.0)
-    assert "feedback_receive" not in policy.weights
-    assert "feedback_give" not in policy.weights
-
-
-def test_policy_rejects_weights_that_do_not_sum_to_one() -> None:
-    with pytest.raises(ValueError, match="sum to 1.0"):
-        ClassificationPolicy(
-            weights={"win": 0.1, "team": 0.35, "improvement": 0.25, "focus": 0.2},
-            gachi_weighted_minimum=0.8,
-            gachi_axis_minimums=DEFAULT_CLASSIFICATION_POLICY.gachi_axis_minimums,
-            gachi_leaning_weighted_minimum=0.65,
-            gachi_leaning_axis_minimums=(
-                DEFAULT_CLASSIFICATION_POLICY.gachi_leaning_axis_minimums
-            ),
-            balanced_minimum=0.45,
-            enjoy_leaning_minimum=0.25,
-        )
-
-
-@pytest.mark.parametrize(
-    ("normalized", "expected_weighted", "expected_category"),
-    [
-        (1.0, 1.0, PlaystyleCategory.GACHI),
-        (0.0, 0.0, PlaystyleCategory.ENJOY),
-    ],
-)
-def test_uniform_extremes(
-    service: ValorantPlaystyleService,
-    normalized: float,
-    expected_weighted: float,
-    expected_category: PlaystyleCategory,
-) -> None:
-    result = service.classify(
-        _score(
-            win=normalized,
-            team=normalized,
-            improvement=normalized,
-            focus=normalized,
-        )
-    )
-
-    assert result.weighted_score == pytest.approx(expected_weighted)
-    assert result.category is expected_category
-
-
-def test_gachi_at_exact_weighted_boundary(service: ValorantPlaystyleService) -> None:
-    result = service.classify(_score(win=0.8, team=0.8, improvement=0.8, focus=0.8))
-
-    assert result.weighted_score == pytest.approx(0.8)
-    assert result.category is PlaystyleCategory.GACHI
-
-
-@pytest.mark.parametrize(
-    ("axis", "minimum"),
-    [
-        ("team", 0.8),
-        ("improvement", 2 / 3),
-        ("focus", 2 / 3),
-        ("win", 5 / 9),
-    ],
-)
-def test_gachi_accepts_each_axis_at_its_exact_minimum(
-    service: ValorantPlaystyleService, axis: str, minimum: float
-) -> None:
-    values = dict.fromkeys(PRIMARY_AXES, 1.0)
-    values[axis] = minimum
-
-    result = service.classify(_score(**values))
-
-    assert result.weighted_score >= 0.8
-    assert result.category is PlaystyleCategory.GACHI
-
-
-@pytest.mark.parametrize(
-    ("axis", "minimum"),
-    [
-        ("team", 0.8),
-        ("improvement", 2 / 3),
-        ("focus", 2 / 3),
-        ("win", 5 / 9),
-    ],
-)
-def test_gachi_rejects_each_axis_just_below_its_minimum(
-    service: ValorantPlaystyleService, axis: str, minimum: float
-) -> None:
-    values = dict.fromkeys(PRIMARY_AXES, 0.9)
-    values[axis] = minimum - 1e-9
-
-    result = service.classify(_score(**values))
-
-    assert result.weighted_score >= 0.8
-    assert result.category is not PlaystyleCategory.GACHI
-
-
-def test_gachi_leaning_at_exact_weighted_boundary(
-    service: ValorantPlaystyleService,
-) -> None:
-    result = service.classify(
-        _score(win=0.65, team=0.65, improvement=0.65, focus=0.65)
-    )
-
-    assert result.weighted_score == pytest.approx(0.65)
-    assert result.category is PlaystyleCategory.GACHI_LEANING
-
-
-@pytest.mark.parametrize(
-    ("axis", "minimum"),
-    [("team", 0.6), ("improvement", 5 / 9), ("focus", 5 / 9)],
-)
-def test_gachi_leaning_accepts_each_axis_at_its_exact_minimum(
-    service: ValorantPlaystyleService, axis: str, minimum: float
-) -> None:
-    values = dict.fromkeys(PRIMARY_AXES, 1.0)
-    values[axis] = minimum
-
-    result = service.classify(_score(**values))
-
-    assert result.weighted_score >= 0.65
-    assert result.category is PlaystyleCategory.GACHI_LEANING
-
-
-def test_gachi_leaning_has_no_win_minimum(service: ValorantPlaystyleService) -> None:
-    result = service.classify(_score(win=0.0, team=1.0, improvement=1.0, focus=1.0))
-
-    assert result.weighted_score == pytest.approx(0.8)
-    assert result.category is PlaystyleCategory.GACHI_LEANING
-
-
-def test_high_weighted_score_cannot_bypass_team_gate(
-    service: ValorantPlaystyleService,
-) -> None:
-    result = service.classify(_score(win=1.0, team=0.59, improvement=1.0, focus=1.0))
-
-    assert result.weighted_score > 0.8
-    assert result.category is PlaystyleCategory.BALANCED
-
-
-@pytest.mark.parametrize("axis", ["improvement", "focus"])
-def test_high_weighted_score_cannot_bypass_upper_axis_gate(
-    service: ValorantPlaystyleService, axis: str
-) -> None:
-    values = dict.fromkeys(PRIMARY_AXES, 1.0)
-    values[axis] = 5 / 9 - 1e-9
-
-    result = service.classify(_score(**values))
-
-    assert result.weighted_score > 0.8
-    assert result.category is PlaystyleCategory.BALANCED
-
-
-@pytest.mark.parametrize(
-    ("normalized", "expected"),
-    [
-        (0.45, PlaystyleCategory.BALANCED),
-        (0.45 - 1e-9, PlaystyleCategory.ENJOY_LEANING),
-        (0.25, PlaystyleCategory.ENJOY_LEANING),
-        (0.25 - 1e-9, PlaystyleCategory.ENJOY),
-    ],
-)
-def test_lower_classification_boundaries(
-    service: ValorantPlaystyleService,
-    normalized: float,
-    expected: PlaystyleCategory,
-) -> None:
-    result = service.classify(
-        _score(
-            win=normalized,
-            team=normalized,
-            improvement=normalized,
-            focus=normalized,
-        )
-    )
-
-    assert result.weighted_score == pytest.approx(normalized)
-    assert result.category is expected
-
-
-def test_feedback_does_not_change_weighted_score_or_category(
-    service: ValorantPlaystyleService,
-) -> None:
-    low_feedback = service.classify(
-        _score(win=0.5, team=0.5, improvement=0.5, focus=0.5)
-    )
-    high_feedback = service.classify(
-        _score(
-            win=0.5,
-            team=0.5,
-            improvement=0.5,
-            focus=0.5,
-            feedback_receive=1.0,
-            feedback_give=1.0,
-        )
-    )
-
-    assert low_feedback.weighted_score == high_feedback.weighted_score
-    assert low_feedback.category is high_feedback.category
-
-
-def test_incomplete_score_cannot_be_classified(
-    service: ValorantPlaystyleService,
-) -> None:
-    partial = service.score_partial({"q01": "a"})
-
-    with pytest.raises(IncompleteAnswersError) as error:
-        service.classify(partial)
-
-    assert error.value.missing_question_ids == partial.missing_question_ids
-
-
-def test_real_question_master_can_score_and_classify_complete_answers(
-    service: ValorantPlaystyleService,
-) -> None:
-    answers = {
-        question.id: max(
-            question.choices,
-            key=lambda choice: sum(choice.scores.values()),
-        ).id
-        for question in service.question_set.questions
+    assert policy.gachi_minimum == 0.65
+    assert policy.neutral_minimum == 0.35
+    assert dict(policy.gachi_axis_minimums) == {
+        "team": 0.60,
+        "improvement": 5 / 9,
+        "focus": 5 / 9,
     }
 
-    result = service.classify_complete(answers)
 
+@pytest.mark.parametrize(
+    ("value", "category"),
+    [
+        (1.0, PlaystyleCategory.GACHI),
+        (0.65, PlaystyleCategory.GACHI),
+        (0.65 - 1e-9, PlaystyleCategory.NEUTRAL),
+        (0.35, PlaystyleCategory.NEUTRAL),
+        (0.35 - 1e-9, PlaystyleCategory.ENJOY),
+        (0.0, PlaystyleCategory.ENJOY),
+    ],
+)
+def test_three_category_boundaries(value: float, category: PlaystyleCategory) -> None:
+    assert _service().classify(_score(value)).category is category
+
+
+@pytest.mark.parametrize("axis", ["team", "improvement", "focus"])
+def test_gachi_axis_gate_demotes_only_to_neutral(axis: str) -> None:
+    values = {"team": 1.0, "improvement": 1.0, "focus": 1.0}
+    values[axis] = DEFAULT_CLASSIFICATION_POLICY.gachi_axis_minimums[axis] - 1e-9
+    result = _service().classify(_score(1.0, **values))
+
+    assert result.weighted_score >= 0.65
+    assert result.category is PlaystyleCategory.NEUTRAL
+
+
+def test_gachi_has_no_win_gate() -> None:
+    result = _service().classify(_score(1.0, win=0.0))
+    assert result.weighted_score == pytest.approx(0.8)
     assert result.category is PlaystyleCategory.GACHI
-    assert result.weighted_score == pytest.approx(1.0)
-    assert result.score.missing_question_ids == ()
-    assert all(result.score.axes[axis].normalized == 1.0 for axis in PRIMARY_AXES)
+
+
+def test_feedback_does_not_affect_classification() -> None:
+    base = _score(0.5)
+    changed_axes = dict(base.axes)
+    changed_axes["feedback_receive"] = AxisScore(3, 3, 1.0)
+    changed_axes["feedback_give"] = AxisScore(3, 3, 1.0)
+    changed = PlaystyleScore(MappingProxyType(changed_axes), (), ())
+
+    first = _service().classify(base)
+    second = _service().classify(changed)
+    assert first.weighted_score == second.weighted_score
+    assert first.category is second.category
+
+
+def test_incomplete_score_cannot_be_classified() -> None:
+    with pytest.raises(IncompleteAnswersError):
+        _service().classify(_score(1.0, missing=("q15",)))
+
+
+def test_injected_threshold_changes_same_score_category() -> None:
+    score = _score(0.60)
+    strict = ClassificationPolicy(
+        weights=DEFAULT_CLASSIFICATION_POLICY.weights,
+        gachi_minimum=0.65,
+        neutral_minimum=0.35,
+        gachi_axis_minimums=DEFAULT_CLASSIFICATION_POLICY.gachi_axis_minimums,
+    )
+    relaxed = ClassificationPolicy(
+        weights=DEFAULT_CLASSIFICATION_POLICY.weights,
+        gachi_minimum=0.55,
+        neutral_minimum=0.35,
+        gachi_axis_minimums=DEFAULT_CLASSIFICATION_POLICY.gachi_axis_minimums,
+    )
+    assert _service(strict).classify(score).category is PlaystyleCategory.NEUTRAL
+    assert _service(relaxed).classify(score).category is PlaystyleCategory.GACHI
+
+
+@pytest.mark.parametrize(
+    ("gachi", "neutral"),
+    [(1.1, 0.35), (-0.1, 0.0), (0.65, -0.1), (0.65, 1.1), (0.5, 0.5), (0.4, 0.7)],
+)
+def test_policy_rejects_invalid_thresholds(gachi: float, neutral: float) -> None:
+    with pytest.raises(ValueError):
+        ClassificationPolicy(
+            weights=DEFAULT_CLASSIFICATION_POLICY.weights,
+            gachi_minimum=gachi,
+            neutral_minimum=neutral,
+            gachi_axis_minimums=DEFAULT_CLASSIFICATION_POLICY.gachi_axis_minimums,
+        )
