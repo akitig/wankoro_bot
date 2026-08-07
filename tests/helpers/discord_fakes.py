@@ -202,9 +202,16 @@ class FakeFollowup:
 
 
 class FakeInteraction:
-    def __init__(self, user: FakeMember, *, guild: FakeGuild | None = None) -> None:
+    def __init__(
+        self,
+        user: FakeMember,
+        *,
+        guild: FakeGuild | None = None,
+        channel_id: int | None = None,
+    ) -> None:
         self.user = user
         self.guild = guild
+        self.channel_id = channel_id
         self.response = FakeResponse()
         self.followup = FakeFollowup()
 

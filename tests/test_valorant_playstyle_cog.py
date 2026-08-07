@@ -40,7 +40,7 @@ def _config(tmp_path: Path, *, timeout: int = 1800) -> SimpleNamespace:
         valo_playstyle_gachi_focus_min=5 / 9,
         valo_playstyle_results_path=tmp_path / "results.json",
         valo_playstyle_timeout_seconds=timeout,
-        valo_playstyle_timeout_channel_id=30,
+        valo_playstyle_log_channel_id=30,
         valo_playstyle_resend_user_id=40,
         require_id=lambda value, _name: value,
     )
@@ -74,6 +74,8 @@ def test_cog_uses_configured_policy_and_registers_command(tmp_path, monkeypatch)
     assert cog.core.classification_policy.neutral_minimum == 0.35
     assert cog.valo_role.name == "valo_role"
     assert cog.valo_role.default_permissions.administrator is True
+    assert cog.valo_role_log.name == "valo_role_log"
+    assert cog.valo_role_log.default_permissions.administrator is True
     assert "cogs.valorant_playstyle" in main.COGS
 
 
@@ -93,7 +95,7 @@ def test_cog_load_re_evaluates_saved_results(tmp_path, monkeypatch) -> None:
 
 def test_command_rejects_bot_and_duplicate_session(tmp_path, monkeypatch) -> None:
     async def scenario() -> None:
-        cog, _channel = _make_cog(tmp_path, monkeypatch)
+        cog, channel = _make_cog(tmp_path, monkeypatch)
         admin = FakeMember(1, name="admin")
         bot_member = FakeMember(2, bot=True)
         interaction = FakeInteraction(admin)
@@ -107,6 +109,11 @@ def test_command_rejects_bot_and_duplicate_session(tmp_path, monkeypatch) -> Non
         await cog.valo_role.callback(cog, second, member)
         assert "現在診断中" in second.followup.calls[-1][0][0]
         assert len(member.sent) == 1
+        audit = channel.sent[-1][1]["embed"]
+        assert audit.title == "🐶 VALORANT診断を送信しました"
+        assert member.mention in audit.description
+        assert "<@1>" in audit.description
+        assert "診断開始待ち" in audit.description
         await cog.cog_unload()
 
     asyncio.run(scenario())
@@ -118,7 +125,7 @@ def test_command_reports_dm_failure_without_leaving_session(tmp_path, monkeypatc
             raise RuntimeError("DM failed")
 
     async def scenario() -> None:
-        cog, _channel = _make_cog(tmp_path, monkeypatch)
+        cog, channel = _make_cog(tmp_path, monkeypatch)
         member = FailingMember(3)
         interaction = FakeInteraction(FakeMember(1, name="admin"))
 
@@ -126,6 +133,10 @@ def test_command_reports_dm_failure_without_leaving_session(tmp_path, monkeypatc
 
         assert member.id not in cog.sessions
         assert "送信に失敗" in interaction.followup.calls[-1][0][0]
+        audit = channel.sent[-1][1]["embed"]
+        assert "送信に失敗" in audit.title
+        assert member.mention in audit.description
+        assert "<@1>" in audit.description
 
     asyncio.run(scenario())
 
@@ -175,9 +186,26 @@ def test_start_and_each_answer_reset_idle_timeout(tmp_path, monkeypatch) -> None
     asyncio.run(scenario())
 
 
+def test_individual_answers_do_not_emit_audit_logs(tmp_path, monkeypatch) -> None:
+    async def scenario() -> None:
+        cog, channel = _make_cog(tmp_path, monkeypatch)
+        member = FakeMember(3)
+        session = playstyle_cog.DiagnosisSession(member, 1, "admin")
+        session.dm_message = FakeSentMessage()
+        session.question_index = 0
+        cog.sessions[member.id] = session
+
+        await cog.answer_question(member.id, "q01", "a")
+
+        assert channel.sent == []
+        await cog.cog_unload()
+
+    asyncio.run(scenario())
+
+
 def test_other_user_cannot_use_diagnosis_views(tmp_path, monkeypatch) -> None:
     async def scenario() -> None:
-        cog, _channel = _make_cog(tmp_path, monkeypatch)
+        cog, channel = _make_cog(tmp_path, monkeypatch)
         interaction = FakeInteraction(FakeMember(99))
         start = playstyle_cog.StartDiagnosisView(cog, 3)
         question = playstyle_cog.QuestionView(cog, 3, "q01", ["a", "b", "c", "d"])
@@ -191,7 +219,7 @@ def test_other_user_cannot_use_diagnosis_views(tmp_path, monkeypatch) -> None:
 
 def test_q15_completion_persists_and_replaces_user_result(tmp_path, monkeypatch) -> None:
     async def scenario() -> None:
-        cog, _channel = _make_cog(tmp_path, monkeypatch)
+        cog, channel = _make_cog(tmp_path, monkeypatch)
         await cog.cog_load()
         member = FakeMember(3)
         session = playstyle_cog.DiagnosisSession(member, 1, "admin")
@@ -209,6 +237,13 @@ def test_q15_completion_persists_and_replaces_user_result(tmp_path, monkeypatch)
         assert saved["category"] == PlaystyleCategory.GACHI.value
         assert member.id not in cog.sessions
         assert session.dm_message.edits[-1]["view"] is None
+        completion = channel.sent[-1][1]["embed"]
+        dm_result = session.dm_message.edits[-1]["embed"].description
+        assert completion.title == "🐶 VALORANT診断が完了しました"
+        assert member.mention in completion.description
+        assert "<@1>" in completion.description
+        assert "総合スコア：100%" in completion.description
+        assert dm_result in completion.description.replace("総合スコア：100%\n\n", "")
 
         session = playstyle_cog.DiagnosisSession(member, 2, "second-admin")
         session.dm_message = FakeSentMessage()
@@ -223,9 +258,132 @@ def test_q15_completion_persists_and_replaces_user_result(tmp_path, monkeypatch)
     asyncio.run(scenario())
 
 
-def test_save_failure_is_shown_as_failure_and_ends_session(tmp_path, monkeypatch) -> None:
+def test_audit_send_failure_does_not_break_diagnosis_start(
+    tmp_path, monkeypatch
+) -> None:
+    async def scenario() -> None:
+        monkeypatch.setattr(playstyle_cog, "get_config", lambda: _config(tmp_path))
+        channel = FakeChannel(send_error=RuntimeError("audit unavailable"))
+        cog = playstyle_cog.ValorantPlaystyleCog(BotFake(channel))
+        member = FakeMember(3)
+        interaction = FakeInteraction(FakeMember(1, name="admin"))
+
+        await cog.valo_role.callback(cog, interaction, member)
+
+        assert member.id in cog.sessions
+        assert "診断を送信しました" in interaction.followup.calls[-1][0][0]
+        await cog.cog_unload()
+
+    asyncio.run(scenario())
+
+
+def test_answer_log_rejects_wrong_channel_before_lookup(tmp_path, monkeypatch) -> None:
     async def scenario() -> None:
         cog, _channel = _make_cog(tmp_path, monkeypatch)
+        cog.results.repository.get_result = Mock(side_effect=AssertionError("lookup"))
+        interaction = FakeInteraction(FakeMember(1), channel_id=999)
+
+        await cog.valo_role_log.callback(cog, interaction, FakeMember(3))
+
+        response = interaction.response.calls[-1]
+        assert "ログチャンネルでのみ" in response[1][0]
+        assert response[2]["ephemeral"] is True
+
+    asyncio.run(scenario())
+
+
+def test_answer_log_reports_missing_result_ephemerally(tmp_path, monkeypatch) -> None:
+    async def scenario() -> None:
+        cog, _channel = _make_cog(tmp_path, monkeypatch)
+        await cog.cog_load()
+        interaction = FakeInteraction(FakeMember(1), channel_id=30)
+
+        await cog.valo_role_log.callback(cog, interaction, FakeMember(3))
+
+        assert interaction.response.calls[-1] == ("defer", (), {"ephemeral": True})
+        args, kwargs = interaction.followup.calls[-1]
+        assert "診断結果はまだありません" in args[0]
+        assert kwargs["ephemeral"] is True
+
+    asyncio.run(scenario())
+
+
+def test_answer_log_restores_saved_answers_as_ephemeral_pages(
+    tmp_path, monkeypatch
+) -> None:
+    async def scenario() -> None:
+        cog, channel = _make_cog(tmp_path, monkeypatch)
+        await cog.cog_load()
+        answers = {question.id: "c" for question in cog.core.question_set.questions}
+        classification = cog.core.classify_complete(answers)
+        await cog.results.save_completed(
+            user_id=3,
+            answers=answers,
+            classification=classification,
+            diagnosis_version=cog.core.question_set.diagnosis_version,
+            invoked_by=1,
+            invoked_by_name="admin",
+        )
+        interaction = FakeInteraction(FakeMember(9), channel_id=30)
+
+        await cog.valo_role_log.callback(cog, interaction, FakeMember(3))
+
+        assert len(interaction.followup.calls) == 4
+        assert all(call[1]["ephemeral"] is True for call in interaction.followup.calls)
+        summary = interaction.followup.calls[0][1]["embed"].description
+        assert "対象：<@3>" in summary
+        assert "診断日時：" in summary
+        assert "最終評価日時：" in summary
+        assert "送信者：<@1>" in summary
+        assert "総合スコア：" in summary
+        assert "勝利志向" in summary
+        assert "フィードバック傾向" in summary
+        rendered = "\n".join(
+            call[1]["embed"].description for call in interaction.followup.calls[1:]
+        )
+        assert rendered.index("**Q1**") < rendered.index("**Q15**")
+        for question in cog.core.question_set.questions:
+            selected = next(choice for choice in question.choices if choice.id == "c")
+            assert question.text in rendered
+            assert selected.text in rendered
+        assert channel.sent == []
+
+    asyncio.run(scenario())
+
+
+def test_answer_log_version_mismatch_does_not_restore_or_delete_result(
+    tmp_path, monkeypatch
+) -> None:
+    async def scenario() -> None:
+        cog, _channel = _make_cog(tmp_path, monkeypatch)
+        await cog.cog_load()
+        answers = _maximum_answers(cog)
+        classification = cog.core.classify_complete(answers)
+        await cog.results.save_completed(
+            user_id=3,
+            answers=answers,
+            classification=classification,
+            diagnosis_version="older-version",
+            invoked_by=1,
+            invoked_by_name="admin",
+        )
+        before = cog.results.repository.get_result(3)
+        interaction = FakeInteraction(FakeMember(9), channel_id=30)
+
+        await cog.valo_role_log.callback(cog, interaction, FakeMember(3))
+
+        assert len(interaction.followup.calls) == 1
+        embed = interaction.followup.calls[0][1]["embed"]
+        assert "安全に復元できない" in embed.description
+        assert "older-version" in embed.description
+        assert cog.results.repository.get_result(3) == before
+
+    asyncio.run(scenario())
+
+
+def test_save_failure_is_shown_as_failure_and_ends_session(tmp_path, monkeypatch) -> None:
+    async def scenario() -> None:
+        cog, channel = _make_cog(tmp_path, monkeypatch)
         member = FakeMember(3)
         session = playstyle_cog.DiagnosisSession(member, 1, "admin")
         session.dm_message = FakeSentMessage()
@@ -238,6 +396,7 @@ def test_save_failure_is_shown_as_failure_and_ends_session(tmp_path, monkeypatch
         embed = session.dm_message.edits[-1]["embed"]
         assert "保存できませんでした" in embed.title
         assert member.id not in cog.sessions
+        assert "保存に失敗" in channel.sent[-1][1]["embed"].title
 
     asyncio.run(scenario())
 

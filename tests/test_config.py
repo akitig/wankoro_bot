@@ -182,7 +182,7 @@ def test_valorant_playstyle_config_values_are_typed(monkeypatch) -> None:
     monkeypatch.setenv("VALO_PLAYSTYLE_GACHI_IMPROVEMENT_MIN", "0.56")
     monkeypatch.setenv("VALO_PLAYSTYLE_GACHI_FOCUS_MIN", "0.57")
     monkeypatch.setenv("VALO_PLAYSTYLE_TIMEOUT_SECONDS", "900")
-    monkeypatch.setenv("VALO_PLAYSTYLE_TIMEOUT_CHANNEL_ID", "123")
+    monkeypatch.setenv("VALO_PLAYSTYLE_LOG_CHANNEL_ID", "123")
     monkeypatch.setenv("VALO_PLAYSTYLE_RESEND_USER_ID", "456")
 
     config = get_config()
@@ -193,7 +193,8 @@ def test_valorant_playstyle_config_values_are_typed(monkeypatch) -> None:
     assert config.valo_playstyle_gachi_improvement_min == 0.56
     assert config.valo_playstyle_gachi_focus_min == 0.57
     assert config.valo_playstyle_timeout_seconds == 900
-    assert config.valo_playstyle_timeout_channel_id == 123
+    assert config.valo_playstyle_log_channel_id == 123
+    assert not hasattr(config, "valo_playstyle_timeout_channel_id")
     assert config.valo_playstyle_resend_user_id == 456
 
 
@@ -204,7 +205,7 @@ def test_valorant_playstyle_config_values_are_typed(monkeypatch) -> None:
         ("VALO_PLAYSTYLE_NEUTRAL_MIN", "-0.1"),
         ("VALO_PLAYSTYLE_GACHI_TEAM_MIN", "invalid"),
         ("VALO_PLAYSTYLE_TIMEOUT_SECONDS", "0"),
-        ("VALO_PLAYSTYLE_TIMEOUT_CHANNEL_ID", "-1"),
+        ("VALO_PLAYSTYLE_LOG_CHANNEL_ID", "-1"),
         ("VALO_PLAYSTYLE_RESEND_USER_ID", "invalid"),
     ],
 )
