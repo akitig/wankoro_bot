@@ -31,13 +31,14 @@ logs/
 
 # Mutable runtime state (legacy paths retained until the planned migration)
 valomap_bans.json
+valorant_playstyle_results.json
+data/valorant_playstyle_results.json
 bump_panel_state.json
 data/bump_panel_state.json
 availability_poll_state.json
 data/availability_poll_state.json
 data/2026_joya_state.json
 data/2026_omikujii_points.json
-data/valo_check_completed.json
 data/xmas_gacha_state.json
 
 # Proposed runtime-data location

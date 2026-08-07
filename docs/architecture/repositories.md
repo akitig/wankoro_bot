@@ -42,7 +42,12 @@ storage/json_store.py
 - **OmikujiRepository**: User IDごとのポイント、初期化、増減、下限、全resetの永続化。
 - **XmasRepository**: 元nicknameとpanel message IDのruntime state永続化。
 - **ValomapRepository**: VALORANTマップのBAN setと追加・解除・全解除の永続化。
-- **ValocheckRepository**: 診断完了recordと質問・introのraw JSON読込。
+- **ValorantPlaystyleRepository**: version付き質問master JSONのschema、ID、axis、scoreを
+  検証し、Discord非依存の質問モデルとして読み込む。Serviceは主要4軸を重み付けし、
+  GACHIの軸別最低条件を適用してENJOY / NEUTRAL / GACHIへ分類する。
+- **ValorantPlaystyleResultRepository**: 完了回答、6軸score、診断version、派生した分類を
+  schema version付きruntime JSONへ保存する。同一processの更新をlockで直列化し、atomic
+  writeを行う。起動時のService再評価は保存categoryではなく軸scoreと現在Policyを使う。
 - **BumpPanelRepository**: BUMP成功時刻、次回可能時刻、panel message IDの永続化。
 - **AvailabilityPollRepository**: active poll、匿名集計用回答、抽選済み次回時刻、
   pause/skip制御の永続化。

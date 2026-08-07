@@ -26,12 +26,10 @@ def test_optional_ids_are_none_when_unset(monkeypatch) -> None:
     monkeypatch.setenv("APPLICATION_ID", "101")
     monkeypatch.setenv("GUILD_ID", "202")
     monkeypatch.delenv("DM_FORWARD_USER_ID", raising=False)
-    monkeypatch.delenv("VALO_ROLE_LOG_CHANNEL_ID", raising=False)
 
     config = get_config()
 
     assert config.dm_forward_user_id is None
-    assert config.valo_role_log_channel_id is None
 
 
 def test_welcome_handler_config_values_are_typed(monkeypatch) -> None:
@@ -104,7 +102,6 @@ def test_config_is_typed_and_cached(monkeypatch) -> None:
     monkeypatch.setenv("GUILD_ID", "202")
     monkeypatch.setenv("DISCORD_TOKEN", "private-token")
     monkeypatch.setenv("MANAGER_ROLE_IDS", "1,invalid,2")
-    monkeypatch.setenv("VALO_CHECK_DATA_PATH", "runtime/completed.json")
     monkeypatch.setenv("RR_GAME_VALO", "10:20")
     monkeypatch.delenv("LOG_LEVEL", raising=False)
 
@@ -114,7 +111,6 @@ def test_config_is_typed_and_cached(monkeypatch) -> None:
     assert config.application_id == 101
     assert config.guild_id == 202
     assert config.manager_role_ids == frozenset({1, 2})
-    assert config.valo_check_data_path == Path("runtime/completed.json")
     assert config.reaction_role_values["RR_GAME_VALO"] == "10:20"
     assert config.log_level == "INFO"
     assert "private-token" not in repr(config)
@@ -148,6 +144,95 @@ def test_bump_panel_optional_command_and_cooldown_fallback(monkeypatch) -> None:
 
     assert config.disboard_bump_command_id is None
     assert config.bump_cooldown_seconds == 7200
+
+
+def test_valorant_playstyle_config_defaults(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("APPLICATION_ID", "101")
+    monkeypatch.setenv("GUILD_ID", "202")
+    monkeypatch.setenv("RUNTIME_DATA_DIR", str(tmp_path))
+    for name in (
+        "VALO_PLAYSTYLE_GACHI_MIN",
+        "VALO_PLAYSTYLE_NEUTRAL_MIN",
+        "VALO_PLAYSTYLE_GACHI_TEAM_MIN",
+        "VALO_PLAYSTYLE_GACHI_IMPROVEMENT_MIN",
+        "VALO_PLAYSTYLE_GACHI_FOCUS_MIN",
+        "VALO_PLAYSTYLE_TIMEOUT_SECONDS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    config = get_config()
+
+    assert config.valo_playstyle_gachi_min == 0.65
+    assert config.valo_playstyle_neutral_min == 0.35
+    assert config.valo_playstyle_gachi_team_min == 0.60
+    assert config.valo_playstyle_gachi_improvement_min == pytest.approx(5 / 9)
+    assert config.valo_playstyle_gachi_focus_min == pytest.approx(5 / 9)
+    assert config.valo_playstyle_timeout_seconds == 1800
+    assert config.valo_playstyle_results_path == (
+        tmp_path / "valorant_playstyle_results.json"
+    )
+
+
+def test_valorant_playstyle_config_values_are_typed(monkeypatch) -> None:
+    monkeypatch.setenv("APPLICATION_ID", "101")
+    monkeypatch.setenv("GUILD_ID", "202")
+    monkeypatch.setenv("VALO_PLAYSTYLE_GACHI_MIN", "0.70")
+    monkeypatch.setenv("VALO_PLAYSTYLE_NEUTRAL_MIN", "0.40")
+    monkeypatch.setenv("VALO_PLAYSTYLE_GACHI_TEAM_MIN", "0.61")
+    monkeypatch.setenv("VALO_PLAYSTYLE_GACHI_IMPROVEMENT_MIN", "0.56")
+    monkeypatch.setenv("VALO_PLAYSTYLE_GACHI_FOCUS_MIN", "0.57")
+    monkeypatch.setenv("VALO_PLAYSTYLE_TIMEOUT_SECONDS", "900")
+    monkeypatch.setenv("VALO_PLAYSTYLE_TIMEOUT_CHANNEL_ID", "123")
+    monkeypatch.setenv("VALO_PLAYSTYLE_RESEND_USER_ID", "456")
+
+    config = get_config()
+
+    assert config.valo_playstyle_gachi_min == 0.70
+    assert config.valo_playstyle_neutral_min == 0.40
+    assert config.valo_playstyle_gachi_team_min == 0.61
+    assert config.valo_playstyle_gachi_improvement_min == 0.56
+    assert config.valo_playstyle_gachi_focus_min == 0.57
+    assert config.valo_playstyle_timeout_seconds == 900
+    assert config.valo_playstyle_timeout_channel_id == 123
+    assert config.valo_playstyle_resend_user_id == 456
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("VALO_PLAYSTYLE_GACHI_MIN", "1.5"),
+        ("VALO_PLAYSTYLE_NEUTRAL_MIN", "-0.1"),
+        ("VALO_PLAYSTYLE_GACHI_TEAM_MIN", "invalid"),
+        ("VALO_PLAYSTYLE_TIMEOUT_SECONDS", "0"),
+        ("VALO_PLAYSTYLE_TIMEOUT_CHANNEL_ID", "-1"),
+        ("VALO_PLAYSTYLE_RESEND_USER_ID", "invalid"),
+    ],
+)
+def test_invalid_valorant_playstyle_config_is_rejected(
+    monkeypatch, name: str, value: str
+) -> None:
+    monkeypatch.setenv("APPLICATION_ID", "101")
+    monkeypatch.setenv("GUILD_ID", "202")
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(ValueError, match=name):
+        get_config()
+
+
+@pytest.mark.parametrize(
+    ("neutral", "gachi"),
+    [("0.70", "0.40"), ("0.50", "0.50")],
+)
+def test_valorant_playstyle_threshold_order_is_validated(
+    monkeypatch, neutral: str, gachi: str
+) -> None:
+    monkeypatch.setenv("APPLICATION_ID", "101")
+    monkeypatch.setenv("GUILD_ID", "202")
+    monkeypatch.setenv("VALO_PLAYSTYLE_NEUTRAL_MIN", neutral)
+    monkeypatch.setenv("VALO_PLAYSTYLE_GACHI_MIN", gachi)
+
+    with pytest.raises(ValueError, match="NEUTRAL_MIN"):
+        get_config()
 
 
 def test_availability_poll_config(monkeypatch, tmp_path: Path) -> None:

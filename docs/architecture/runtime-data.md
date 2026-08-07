@@ -23,10 +23,9 @@ current production layout.
 |---|---|---:|---:|---|---|
 | `.env` | Secret + deployment configuration | No | Yes | Ignored | External secret store or `/etc/wankorobot/wankorobot.env` |
 | `.env.example` | Configuration example | No | No values | Tracked | `config/examples/wankorobot.env.example` |
-| `data/valo_questions.json` | Master configuration | No | No known user state | Tracked | `config/valocheck/questions.json` |
-| `data/valo_intro.json` | Master configuration | No | No known user state | Tracked | `config/valocheck/intro.json` |
+| `data/valorant_playstyle_questions.json` | Master configuration | No | No user state | Tracked | Keep with the Discord-independent diagnosis core |
+| `valorant_playstyle_results.json` (runtime root) | Runtime state | Yes, at diagnosis completion and startup re-evaluation | Yes: user IDs, answers, scores, administrator identity | Ignored | Deployment-owned runtime root; SQLite is the long-term target |
 | `data/2025_xmas_gacha.csv` | Master configuration | No | No known user state | Tracked | `config/events/2025-xmas/rewards.csv` |
-| `data/valo_check_completed.json` | Runtime state | Yes | Yes: IDs, answers, scores | Tracked and modified | `/var/lib/wankorobot/valocheck/completed.json` initially; SQLite later |
 | `data/2026_omikujii_points.json` | Runtime state | Yes, every minute | Yes: IDs and points | Tracked and modified | `/var/lib/wankorobot/events/2026-omikuji/points.json` initially |
 | `data/2026_joya_state.json` | Runtime state | Yes | Yes: IDs/state | Tracked | `/var/lib/wankorobot/events/2026-joya/state.json` initially |
 | `data/xmas_gacha_state.json` | Runtime state | Yes | Potentially: IDs/nicknames | Tracked | `/var/lib/wankorobot/events/2025-xmas/state.json` initially |
@@ -46,7 +45,6 @@ index. That migration is intentionally outside this change.
 
 The following mutable runtime files are still tracked by Git:
 
-- `data/valo_check_completed.json`
 - `data/2026_omikujii_points.json`
 - `data/2026_joya_state.json`
 - `data/xmas_gacha_state.json`
@@ -125,3 +123,11 @@ fixed `.tmp` filename. It does not provide transactions across multiple files,
 merge concurrent read-modify-write operations, or coordinate multiple Bot
 processes. Those concerns remain migration requirements for a future SQLite
 storage implementation.
+
+The VALORANT playstyle result file uses schema version 1 and stores completed
+answers plus all six axis scores as the diagnosis facts. Category and weighted
+score are derived values. On Cog startup, records whose `diagnosis_version`
+matches the current question master are classified again with the current
+threshold policy; mismatched versions are retained, skipped, and logged. Updates
+within one Bot process are serialized with a lock and written atomically. This
+does not coordinate two concurrently running Bot processes.

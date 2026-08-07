@@ -15,7 +15,8 @@ REPOSITORY_PATHS = tuple(
         "omikuji_repository.py",
         "xmas_repository.py",
         "valomap_repository.py",
-        "valocheck_repository.py",
+        "valorant_playstyle_repository.py",
+        "valorant_playstyle_result_repository.py",
         "bump_panel_repository.py",
         "availability_poll_repository.py",
     )

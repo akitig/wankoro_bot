@@ -84,7 +84,7 @@ cogs/welcome
 cogs/reaction_roles
 cogs/valomap
 cogs/leave_log
-cogs/valocheck
+cogs/valorant_playstyle
 cogs/valorecruit
 cogs/dm_forward
 cogs/2025_xmas_gacha
@@ -93,6 +93,10 @@ cogs/2026_omikuji_gacha
 cogs/bump_panel
 cogs/availability_poll
 ```
+
+`valorant_playstyle`は管理者の`/valo_role`から対象ユーザーへ15問のDM診断を送り、
+ENJOY / NEUTRAL / GACHIの結果と回答・軸scoreをruntime JSONへ保存します。診断結果からの
+Discord Role付与やVALORANT募集との連携はまだ行いません。
 
 `bump_panel`はDISBOARDのBUMP成功を検知し、2時間後まで1回だけ待機する
 常設案内パネルです。Bot自身は`/bump`を実行せず、ボタンはユーザーへCommand
@@ -218,7 +222,7 @@ EnvironmentFile=/home/akitig/Desktop/Bot/Toureikai/Wankorobot/.env
 ```text
 cogs/          Discord Command・Interaction・View境界
 services/      業務ロジックとDiscord API操作
-repositories/  機能ごとの永続状態と保存API（7 Repository）
+repositories/  機能ごとの永続状態と保存API（8 Repository）
 storage/       共通のJSON読込・atomic保存
 tests/         characterization・境界・Repository・構造テスト
 ```
