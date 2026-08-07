@@ -97,6 +97,9 @@ cogs/availability_poll
 `valorant_playstyle`は管理者の`/valo_role`から対象ユーザーへ15問のDM診断を送り、
 ENJOY / NEUTRAL / GACHIの結果と回答・軸scoreをruntime JSONへ保存します。診断結果からの
 Discord Role付与やVALORANT募集との連携はまだ行いません。
+診断送信・完了・timeout・重要な失敗は`VALO_PLAYSTYLE_LOG_CHANNEL_ID`へ記録します。
+管理者は同Channel内の`/valo_role_log @ユーザー`で、最新V2診断の回答詳細を
+ephemeral表示できます。
 
 `bump_panel`はDISBOARDのBUMP成功を検知し、2時間後まで1回だけ待機する
 常設案内パネルです。Bot自身は`/bump`を実行せず、ボタンはユーザーへCommand

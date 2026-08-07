@@ -19,17 +19,17 @@ from repositories.valorant_playstyle_result_repository import (
     ValorantPlaystyleResultRepository,
 )
 from services.valorant_playstyle_presentation import (
-    AXIS_LABELS,
     CATEGORY_PRESENTATION,
-    feedback_lines,
-    percentage,
-    progress_bar,
+    answer_log_pages,
+    classification_result_description,
+    stored_result_description,
 )
 from services.valorant_playstyle_result_service import (
     ValorantPlaystyleResultService,
 )
 from services.valorant_playstyle_service import (
     ClassificationPolicy,
+    PlaystyleCategory,
     PlaystyleClassification,
     ValorantPlaystyleService,
 )
@@ -148,9 +148,9 @@ class ValorantPlaystyleCog(commands.Cog):
         repository = ValorantPlaystyleResultRepository(config.valo_playstyle_results_path)
         self.results = ValorantPlaystyleResultService(self.core, repository)
         self.timeout_seconds = config.valo_playstyle_timeout_seconds
-        self.timeout_channel_id = config.require_id(
-            config.valo_playstyle_timeout_channel_id,
-            "VALO_PLAYSTYLE_TIMEOUT_CHANNEL_ID",
+        self.log_channel_id = config.require_id(
+            config.valo_playstyle_log_channel_id,
+            "VALO_PLAYSTYLE_LOG_CHANNEL_ID",
         )
         self.resend_user_id = config.require_id(
             config.valo_playstyle_resend_user_id,
@@ -197,18 +197,125 @@ class ValorantPlaystyleCog(commands.Cog):
             )
         except discord.Forbidden:
             self.sessions.pop(member.id, None)
+            logger.warning(
+                "Playstyle diagnosis DM was forbidden: target=%s requester=%s",
+                member.id,
+                interaction.user.id,
+            )
             await interaction.followup.send(
                 "DMを送れませんでした。対象ユーザーのDM設定を確認してください。",
                 ephemeral=True,
             )
+            await self._send_dm_failure_audit(member, interaction.user.id)
             return
         except Exception:
             self.sessions.pop(member.id, None)
-            logger.exception("Failed to send playstyle diagnosis DM")
+            logger.exception(
+                "Failed to send playstyle diagnosis DM: target=%s requester=%s",
+                member.id,
+                interaction.user.id,
+            )
             await interaction.followup.send("診断DMの送信に失敗しました。", ephemeral=True)
+            await self._send_dm_failure_audit(member, interaction.user.id)
             return
         self._reset_timeout(session)
         await interaction.followup.send(f"{member.mention} に診断を送信しました。", ephemeral=True)
+        await self._send_audit(
+            discord.Embed(
+                title="🐶 VALORANT診断を送信しました",
+                description=(
+                    f"対象：{member.mention}\n"
+                    f"送信者：<@{interaction.user.id}>\n"
+                    "状態：診断開始待ち"
+                ),
+                color=0xF4A261,
+            ),
+            context="diagnosis start",
+        )
+
+    @app_commands.command(
+        name="valo_role_log",
+        description="指定メンバーの最新VALORANT診断回答を確認します",
+    )
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.checks.has_permissions(administrator=True)
+    async def valo_role_log(
+        self, interaction: discord.Interaction, member: discord.Member
+    ) -> None:
+        if interaction.channel_id != self.log_channel_id:
+            await interaction.response.send_message(
+                "🐶 このコマンドはVALORANT診断ログチャンネルでのみ使用できます。",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        result = self.results.repository.get_result(member.id)
+        if result is None:
+            await interaction.followup.send(
+                "🐶 このユーザーのVALORANT診断結果はまだありません。",
+                ephemeral=True,
+            )
+            return
+        current_version = self.core.question_set.diagnosis_version
+        if result["diagnosis_version"] != current_version:
+            await interaction.followup.send(
+                embed=discord.Embed(
+                    title="🐶 VALORANT診断 回答ログ",
+                    description=(
+                        "⚠️ この診断結果は現在と異なる質問バージョンで記録されています。\n"
+                        "回答内容を安全に復元できないため、詳細表示できません。\n\n"
+                        f"診断Version：{result['diagnosis_version']}\n"
+                        f"現在Version：{current_version}"
+                    ),
+                    color=0xE9C46A,
+                ),
+                ephemeral=True,
+            )
+            return
+        try:
+            pages = answer_log_pages(self.core.question_set, result["answers"])
+        except ValueError:
+            logger.exception(
+                "Failed to restore playstyle answers: requester=%s target=%s",
+                interaction.user.id,
+                member.id,
+            )
+            await interaction.followup.send(
+                "⚠️ 保存された回答内容を安全に復元できませんでした。",
+                ephemeral=True,
+            )
+            return
+        invoked_by = result.get("invoked_by")
+        invoked_by_text = f"<@{invoked_by}>" if invoked_by is not None else "不明"
+        category_title = CATEGORY_PRESENTATION[PlaystyleCategory(result["category"])][0]
+        summary = discord.Embed(
+            title="🐶 VALORANT診断 回答ログ",
+            description=(
+                f"対象：{member.mention}\n"
+                f"診断結果：{category_title}\n"
+                f"診断日時：{result['completed_at']}\n"
+                f"最終評価日時：{result['evaluated_at']}\n"
+                f"送信者：{invoked_by_text}\n\n"
+                f"{stored_result_description(result)}"
+            ),
+            color=0xF4A261,
+        )
+        await interaction.followup.send(embed=summary, ephemeral=True)
+        total_pages = len(pages)
+        for index, page in enumerate(pages, start=1):
+            await interaction.followup.send(
+                embed=discord.Embed(
+                    title=f"🐶 VALORANT診断 回答ログ {index}/{total_pages}",
+                    description=page,
+                    color=0xF4A261,
+                ),
+                ephemeral=True,
+            )
+        logger.info(
+            "Playstyle answer log viewed: requester=%s target=%s",
+            interaction.user.id,
+            member.id,
+        )
 
     async def start_questions(self, user_id: int) -> None:
         session = self.sessions.get(user_id)
@@ -271,42 +378,52 @@ class ValorantPlaystyleCog(commands.Cog):
                 invoked_by_name=session.administrator_name,
             )
         except Exception:
-            logger.exception("Failed to persist playstyle diagnosis result")
+            logger.exception(
+                "Failed to persist playstyle diagnosis result: target=%s requester=%s",
+                session.user.id,
+                session.administrator_id,
+            )
             error_embed = discord.Embed(
                 title="🐶 診断結果を保存できませんでした",
                 description="診断結果の保存に失敗しました。管理者へ連絡してください。",
                 color=0xE76F51,
             )
+            await self._send_audit(
+                discord.Embed(
+                    title="⚠️ VALORANT診断結果の保存に失敗しました",
+                    description=(
+                        f"対象：{session.user.mention}\n"
+                        f"送信者：<@{session.administrator_id}>"
+                    ),
+                    color=0xE76F51,
+                ),
+                context="result persistence failure",
+            )
             await session.dm_message.edit(embed=error_embed, view=None)
         else:
             await session.dm_message.edit(embed=embed, view=None)
+            await self._send_audit(
+                discord.Embed(
+                    title="🐶 VALORANT診断が完了しました",
+                    description=(
+                        f"対象：{session.user.mention}\n"
+                        f"送信者：<@{session.administrator_id}>\n\n"
+                        "🐶 診断結果\n\n"
+                        f"{classification_result_description(classification, include_weighted_score=True)}"
+                    ),
+                    color=0xF4A261,
+                ),
+                context="diagnosis completion",
+            )
         finally:
             self._remove_session(session.user.id)
 
     def _result_embed(self, classification: PlaystyleClassification) -> discord.Embed:
-        title, category_text = CATEGORY_PRESENTATION[classification.category]
-        sections = [title, "", category_text, "", "━━━━━━━━━━━━━━", ""]
-        for axis in ("win", "team", "improvement", "focus"):
-            normalized = classification.score.axes[axis].normalized
-            sections.extend(
-                [AXIS_LABELS[axis], f"{progress_bar(normalized)} {percentage(normalized)}%", ""]
-            )
-        receive, give = feedback_lines(
-            classification.score.axes["feedback_receive"].score,
-            classification.score.axes["feedback_give"].score,
+        return discord.Embed(
+            title="🐶 診断結果",
+            description=classification_result_description(classification),
+            color=0xF4A261,
         )
-        sections.extend(
-            [
-                "━━━━━━━━━━━━━━",
-                "",
-                "💬 フィードバック傾向",
-                f"・{receive}",
-                f"・{give}",
-                "",
-                "※この診断は実力やランクを評価するものではありません。",
-            ]
-        )
-        return discord.Embed(title="🐶 診断結果", description="\n".join(sections), color=0xF4A261)
 
     def _reset_timeout(self, session: DiagnosisSession) -> None:
         session.last_activity = time.monotonic()
@@ -344,14 +461,8 @@ class ValorantPlaystyleCog(commands.Cog):
             await session.dm_message.edit(embed=embed, view=None)
         except Exception:
             logger.exception("Failed to update timed-out playstyle diagnosis DM")
-        channel = self.bot.get_channel(self.timeout_channel_id)
-        if channel is None:
-            try:
-                channel = await self.bot.fetch_channel(self.timeout_channel_id)
-            except Exception:
-                logger.exception("Failed to resolve playstyle timeout channel")
-        if channel is not None:
-            notification = discord.Embed(
+        await self._send_audit(
+            discord.Embed(
                 title="🐶 VALORANT診断がタイムアウトしました",
                 description=(
                     f"対象：{session.user.mention}\n"
@@ -361,12 +472,39 @@ class ValorantPlaystyleCog(commands.Cog):
                     f"必要であれば、<@{self.resend_user_id}> から診断を再送してください。"
                 ),
                 color=0xE76F51,
-            )
-            try:
-                await channel.send(embed=notification)
-            except Exception:
-                logger.exception("Failed to send playstyle timeout notification")
+            ),
+            context="diagnosis timeout",
+        )
         self._remove_session(session.user.id)
+
+    async def _send_dm_failure_audit(self, member: Any, administrator_id: int) -> None:
+        await self._send_audit(
+            discord.Embed(
+                title="⚠️ VALORANT診断の送信に失敗しました",
+                description=(
+                    f"対象：{member.mention}\n"
+                    f"送信者：<@{administrator_id}>\n"
+                    "理由：DMを送信できませんでした"
+                ),
+                color=0xE76F51,
+            ),
+            context="diagnosis DM failure",
+        )
+
+    async def _send_audit(self, embed: discord.Embed, *, context: str) -> bool:
+        channel = self.bot.get_channel(self.log_channel_id)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(self.log_channel_id)
+            except Exception:
+                logger.exception("Failed to resolve playstyle log channel: %s", context)
+                return False
+        try:
+            await channel.send(embed=embed)
+        except Exception:
+            logger.exception("Failed to send playstyle audit log: %s", context)
+            return False
+        return True
 
     def _remove_session(self, user_id: int) -> None:
         session = self.sessions.pop(user_id, None)

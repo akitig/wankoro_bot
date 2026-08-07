@@ -250,7 +250,7 @@ class Config:
     valo_playstyle_gachi_improvement_min: float
     valo_playstyle_gachi_focus_min: float
     valo_playstyle_timeout_seconds: int
-    valo_playstyle_timeout_channel_id: int | None
+    valo_playstyle_log_channel_id: int | None
     valo_playstyle_resend_user_id: int | None
     valo_recruit_channel_id: int | None
     valo_recruit_gachi_role_id: int | None
@@ -373,8 +373,8 @@ def _load_config() -> Config:
         valo_playstyle_timeout_seconds=_strict_positive_int_with_default(
             "VALO_PLAYSTYLE_TIMEOUT_SECONDS", 1800
         ),
-        valo_playstyle_timeout_channel_id=_strict_optional_id(
-            "VALO_PLAYSTYLE_TIMEOUT_CHANNEL_ID"
+        valo_playstyle_log_channel_id=_strict_optional_id(
+            "VALO_PLAYSTYLE_LOG_CHANNEL_ID"
         ),
         valo_playstyle_resend_user_id=_strict_optional_id(
             "VALO_PLAYSTYLE_RESEND_USER_ID"

@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from services.valorant_playstyle_service import PlaystyleCategory
+from collections.abc import Mapping
+from typing import Any
+
+from repositories.valorant_playstyle_repository import QuestionSet
+from services.valorant_playstyle_service import (
+    PlaystyleCategory,
+    PlaystyleClassification,
+)
 
 CATEGORY_PRESENTATION = {
     PlaystyleCategory.GACHI: (
@@ -61,3 +68,102 @@ def progress_bar(normalized: float) -> str:
 
 def feedback_lines(receive_score: int, give_score: int) -> tuple[str, str]:
     return FEEDBACK_RECEIVE[receive_score], FEEDBACK_GIVE[give_score]
+
+
+def _result_description(
+    *,
+    category: PlaystyleCategory,
+    normalized_axes: Mapping[str, float],
+    feedback_receive: int,
+    feedback_give: int,
+    weighted_score: float | None,
+) -> str:
+    title, category_text = CATEGORY_PRESENTATION[category]
+    sections = [title, "", category_text, ""]
+    if weighted_score is not None:
+        sections.extend([f"総合スコア：{percentage(weighted_score)}%", ""])
+    sections.extend(["━━━━━━━━━━━━━━", ""])
+    for axis in ("win", "team", "improvement", "focus"):
+        normalized = normalized_axes[axis]
+        sections.extend(
+            [AXIS_LABELS[axis], f"{progress_bar(normalized)} {percentage(normalized)}%", ""]
+        )
+    receive, give = feedback_lines(feedback_receive, feedback_give)
+    sections.extend(
+        [
+            "━━━━━━━━━━━━━━",
+            "",
+            "💬 フィードバック傾向",
+            f"・{receive}",
+            f"・{give}",
+            "",
+            "※この診断は実力やランクを評価するものではありません。",
+        ]
+    )
+    return "\n".join(sections)
+
+
+def classification_result_description(
+    classification: PlaystyleClassification,
+    *,
+    include_weighted_score: bool = False,
+) -> str:
+    """Render the shared result body used by DMs and audit logs."""
+
+    axes = classification.score.axes
+    return _result_description(
+        category=classification.category,
+        normalized_axes={axis: value.normalized for axis, value in axes.items()},
+        feedback_receive=axes["feedback_receive"].score,
+        feedback_give=axes["feedback_give"].score,
+        weighted_score=(classification.weighted_score if include_weighted_score else None),
+    )
+
+
+def stored_result_description(
+    result: Mapping[str, Any],
+    *,
+    include_weighted_score: bool = True,
+) -> str:
+    """Render the latest persisted category and axis summary."""
+
+    axes = result["axes"]
+    return _result_description(
+        category=PlaystyleCategory(result["category"]),
+        normalized_axes={axis: value["normalized"] for axis, value in axes.items()},
+        feedback_receive=axes["feedback_receive"]["score"],
+        feedback_give=axes["feedback_give"]["score"],
+        weighted_score=(result["weighted_score"] if include_weighted_score else None),
+    )
+
+
+def answer_log_pages(
+    question_set: QuestionSet,
+    answers: Mapping[str, str],
+    *,
+    questions_per_page: int = 5,
+) -> tuple[str, ...]:
+    """Restore saved choice IDs into bounded human-readable answer pages."""
+
+    if questions_per_page <= 0:
+        raise ValueError("questions_per_page must be positive")
+    blocks: list[str] = []
+    for index, question in enumerate(question_set.questions, start=1):
+        choice_id = answers.get(question.id)
+        choice = next(
+            (candidate for candidate in question.choices if candidate.id == choice_id),
+            None,
+        )
+        if choice is None:
+            raise ValueError(f"cannot restore saved answer for {question.id}")
+        blocks.append(f"**Q{index}**\n{question.text}\n\n**回答**\n{choice.text}")
+
+    pages = tuple(
+        "\n\n━━━━━━━━━━━━━━\n\n".join(
+            blocks[start : start + questions_per_page]
+        )
+        for start in range(0, len(blocks), questions_per_page)
+    )
+    if any(len(page) > 4096 for page in pages):
+        raise ValueError("answer log page exceeds Discord embed description limit")
+    return pages
